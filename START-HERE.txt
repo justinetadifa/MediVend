@@ -1,66 +1,65 @@
-MEDIVEND — TOUCHSCREEN STARTER
+MEDIVEND — PHP / MYSQL CATALOG DEMO
 
-QUICKEST START (no installation)
-1. Extract the ZIP first. Do not open index.html from inside the ZIP.
-2. Open the extracted MediVend folder in Visual Studio Code.
-3. Double-click index.html in Windows File Explorer to open it in your browser.
-4. Tap “Get Started”. Add medicines, adjust quantities, remove items, and check out.
+RUN WITH XAMPP
+1. Keep this project in C:\xampp\htdocs\MediVend.
+2. Start Apache and MySQL in the XAMPP Control Panel.
+3. Use the existing medivend_db database. On a fresh installation, import your
+   original medivend_db.sql using http://localhost/phpmyadmin/.
+4. Check config/database.php:
+   host: localhost | port: 3306 | database: medivend_db
+   username: root | password: empty
+5. Open http://localhost/MediVend/ and tap “Get Started”.
 
-WITH XAMPP
-1. Copy the MediVend folder to C:\xampp\htdocs\
-2. Start Apache in the XAMPP Control Panel.
-3. Visit http://localhost/MediVend/
-MySQL is not required for this version. No PHP backend is included yet.
+Do not open index.html directly or use a static-only live server for ordering.
+The catalog needs PHP running through Apache. There is no build or npm install.
+The existing database schema and original SQL file are unchanged.
 
-ON YOUR 7-INCH SCREEN
-1. Keep HDMI and screen power connected.
-2. Connect the screen's TOUCH port to your laptop using a USB data cable.
-3. Use Windows + P > Extend.
-4. In Display settings, select the small display and use 1024 x 600,
-   landscape, with 100% scaling if available. Set browser zoom to 100%.
-5. Select the browser and press Windows + Shift + Left/Right to move it.
-6. Press F11 for full screen (on some laptops, Fn + F11).
-Touch mapping to the wrong display is a Windows display setup issue, not an app issue.
+CATALOG AND PRICES
+- api/products.php reads active rows from products (is_active = 1).
+- Product names, descriptions, prices, and quantities come from MySQL.
+- price_centavos is an integer: 500 = PHP 5.00, 1000 = PHP 10.00.
+- stock_quantity supplies each item's cart limit; zero stock disables adding.
+- image_path is a local web path such as assets/my-product.png.
+- Null/empty or broken images use a bundled photo or local placeholder.
+- Loading, empty catalog, and connection failure have separate visible states.
+- “Try again” / “Refresh catalog” retries the request.
+- Start over or a page reload gets a fresh catalog and clears the session.
 
-WHAT IS INCLUDED
-- Shared MediVend logo, local Poppins/Inter fonts, green buttons, and black outlines.
-- Reference-matched welcome composition with a continuous right-to-left photo loop.
-- The carousel keeps moving under reduced motion; decorative floating is softened.
-- Screen transitions, touch ripples, cart feedback, and animated confirmation.
-- Welcome screen and Diatabs, Biogesic, and Cetirizine listings at PHP 10 each.
-- Local product photos on the welcome screen, catalog, cart, and order summary.
-- Add to cart, increase/decrease quantity, remove, and computed PHP-peso totals.
-- Maximum ten units of each sample item per cart.
-- Empty-cart checkout prevention, review screen, demo acknowledgement.
-- Sample order confirmation and one-tap “Start over” session reset.
-- Responsive layout, touch-sized controls, keyboard focus styling.
-- No remote fonts, images, CDNs, dependencies, internet, or build step.
+WHAT IS PRESERVED
+- Centered welcome screen and continuously moving medicine photos.
+- MediVend branding, Poppins/Inter fonts, green buttons, and black outlines.
+- Touch feedback, screen transitions, cart effects, and local images.
+- Add, increase/decrease, remove, computed totals, and checkout review.
+- Empty-cart checkout prevention and demo acknowledgement.
 
-DEMO BOUNDARIES
-This is a frontend learning prototype. Products, prices and availability are
-samples. No medicine recommendations or dosage instructions are provided.
-It does not accept money, reserve real inventory, connect to hardware,
-authenticate staff, or store orders in a database. Cart/order state lives
-only in memory; refreshing the page clears the session. “Complete demo order”
-is a simulation, not proof of payment or physical dispensing.
+SIMULATION BOUNDARIES
+Only the catalog is connected to the database. Completing a demo order does
+not write transactions, take payment, reserve/decrement stock, or dispense
+medicine. The cart and demo order remain in browser memory; reloading clears
+them. Medicine use still requires clinic guidance.
+
+QUICK CHECK
+1. Open http://localhost/MediVend/api/products.php and inspect the JSON.
+2. In the supplied sample data, two Paracetamol items total PHP 10.00.
+   Adding one Cetirizine brings the total to PHP 18.00.
+3. Add up to the stock limit, decrease quantity, remove, and review your order.
+4. Stop MySQL temporarily to view the connection-error state; restart it and
+   tap “Try again”. No active products produces the empty-catalog state.
+5. In PowerShell from this project directory, run the read-only API checks:
+   & 'C:\xampp\php\php.exe' tests/products-api.test.php
+
+ON A 7-INCH TOUCHSCREEN
+Use 1024 x 600 landscape with 100% display scaling and browser zoom.
+Connect the screen's TOUCH port by USB and move the browser to that display.
+Press F11 for full screen. MySQL and Apache must keep running.
 
 FILES TO EDIT
-index.html       Page shell, header, footer, reset dialog.
-assets/style.css Shared catalog, cart, checkout, and responsive styles.
-assets/welcome.css Reference welcome layout, typography, and medicine animation.
-assets/fonts.css Local Poppins and Inter font definitions used by every screen.
-assets/app.js    Sample catalog, cart logic and screen navigation.
+config/database.php       Local connection credentials.
+includes/database.php     PDO connection helper.
+api/products.php          Read-only active-product JSON endpoint.
+assets/app.js             Catalog fetching, cart, and simulated checkout.
+assets/style.css          Shared branding, catalog states, and responsive UI.
+assets/welcome.css        Centered welcome layout and continuous animation.
+assets/fonts.css          Bundled Poppins and Inter fonts.
 
-To change sample names/prices, edit the products array at the top of app.js.
-Prices are whole centavos: 1000 = PHP 10.00. This avoids decimal money rounding.
-Do not insert untrusted HTML into product fields; this starter treats its
-hard-coded catalog as trusted developer content.
-
-NEXT DEVELOPMENT PHASE
-Build a PHP API + MySQL/MariaDB database. The backend must supply authoritative
-prices, stock, payment state and transaction IDs. Then integrate a hardware
-bridge for the Orange Pi/Arduino. Never trigger motors solely from a browser
-cart or mark a dispense successful without hardware confirmation. Test jams,
-repeated taps, payment failures and power interruptions before real use.
-Use simulated items during development and clinic-approved procedures for
-any supervised medication testing.
+See README.md for the endpoint contract, image fallback behavior, and tests.

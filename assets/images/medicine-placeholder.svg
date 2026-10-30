@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="468" height="254" viewBox="0 0 468 254" role="img" aria-label="Medicine image unavailable">
+  <rect x="1" y="1" width="466" height="252" rx="20" fill="#eef5e9" stroke="#111613" stroke-width="2"/>
+  <g transform="translate(234 106) rotate(-35)">
+    <rect x="-64" y="-29" width="128" height="58" rx="29" fill="#fff" stroke="#111613" stroke-width="3"/>
+    <path d="M0-29h-35a29 29 0 0 0 0 58H0Z" fill="#4caf50"/>
+    <path d="M0-29v58" stroke="#111613" stroke-width="3"/>
+  </g>
+  <text x="234" y="189" text-anchor="middle" fill="#174e28" font-family="Arial, sans-serif" font-size="18" font-weight="bold">MediVend</text>
+  <text x="234" y="214" text-anchor="middle" fill="#6e7c6d" font-family="Arial, sans-serif" font-size="13">Product image unavailable</text>
+</svg>

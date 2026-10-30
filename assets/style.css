@@ -86,8 +86,8 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 22px
 .selected-badge { display: flex; align-items: center; gap: 4px; position: absolute; bottom: 8px; right: 8px; color: white; background: var(--green); padding: 4px 7px; border: 1px solid var(--ink); border-radius: 20px; font-size: 9px; box-shadow: 0 2px 0 #17231918; }
 .selected-badge .icon { width: 11px; height: 11px; }
 .product-info { padding: 18px 5px 0; }
-.product h2 { font-size: 19px; letter-spacing: -.6px; }
-.product-desc { color: #7d8982; font-size: 11px; line-height: 1.5; margin-top: 5px; min-height: 17px; }
+.product h2 { font-size: 19px; letter-spacing: -.6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: #7d8982; font-size: 11px; line-height: 1.5; margin-top: 5px; min-height: 17px; }
 .product-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 23px 5px 15px; }
 .price { color: #1c2d1e; font-size: 22px; font-weight: 800; letter-spacing: -.8px; white-space: nowrap; }
 .price small { color: #9ba29e; font-size: 9px; font-weight: 400; letter-spacing: 0; }
@@ -99,6 +99,14 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 22px
 .add:disabled { color: #8b9a86; background: #e8eee4; border-color: #c6d0c1; box-shadow: none; }
 .catalog-note { display: flex; align-items: flex-start; gap: 6px; color: #909a95; font-size: 9px; line-height: 1.7; margin: 18px 4px 0; }
 .catalog-note .icon { width: 13px; height: 13px; margin-top: 1px; color: #8aa596; }
+
+.catalog-state { grid-column: 1 / -1; min-height: 304px; padding: 25px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: white; border: 1px solid var(--ink); border-radius: 22px; box-shadow: var(--shadow); }
+.catalog-state h2 { font-size: 22px; }
+.catalog-state p { max-width: 390px; margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.catalog-state-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 18px; background: #eef5e9; border: 1px solid #18251866; border-radius: 50%; color: var(--brand-dark); font-size: 25px; font-weight: 700; }
+.catalog-spinner { border: 3px solid #deecd8; border-top-color: var(--green); background: none; animation: catalog-spin .8s linear infinite; }
+.catalog-state .secondary { display: inline-flex; align-items: center; gap: 12px; margin-top: 20px; font-size: 12px; }
+@keyframes catalog-spin { to { transform: rotate(360deg); } }
 
 /* Shopping bag */
 .cart { background: #fff; border: 1px solid var(--ink); border-radius: 22px; padding: 22px; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 387px; }
@@ -124,9 +132,10 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 22px
 .cart-row { padding: 17px 0 12px; border-bottom: 1px solid #eff2ef; }
 .cart-row:last-child { border-bottom: 0; }
 .cart-product { display: flex; gap: 9px; align-items: center; }
+.cart-product > div:not(.cart-thumb) { min-width: 0; }
 .cart-thumb { width: 46px; height: 42px; border-radius: 9px; padding: 5px; flex-shrink: 0; display: grid; place-items: center; }
 .cart-thumb img { width: 100%; height: auto; max-height: 32px; object-fit: contain; border-radius: 2px; }
-.cart-product h3 { font-size: 12px; letter-spacing: -.2px; }
+.cart-product h3 { font-size: 12px; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cart-product p { color: #9aa29d; font-size: 9px; margin-top: 4px; }
 .cart-product > strong { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .row-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-left: 55px; gap: 4px; }
@@ -238,8 +247,8 @@ dialog p { font-size: 13px; line-height: 1.7; color: #86958b; margin: 12px 0 25p
   .collection-bar { margin-bottom: 10px; }
   .product-art { height: 123px; padding: 28px 12px 16px; }
   .product-art img { max-height: 86px; }
-  .product-info { padding-top: 14px; }
-  .product-bottom { margin-top: 18px; margin-bottom: 12px; }
+  .product-info { padding-top: 12px; }
+  .product-bottom { margin-top: 12px; margin-bottom: 10px; }
   .add { min-height: 44px; }
   .cart { height: 331px; min-height: 0; padding: 18px; }
   .cart-items { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #d9e6dd transparent; }
