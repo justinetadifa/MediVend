@@ -1,4 +1,5 @@
-/* Preserve the reference composition while sharing the app's brand styles. */
+/* One centered composition at every viewport; shared MediVend branding lives
+   in style.css. The medicine track keeps running under reduced motion. */
 body.welcome-screen {
   min-height: 100dvh;
   border-block: 3px solid #141719;
@@ -8,50 +9,62 @@ body.welcome-screen {
 }
 
 .welcome-screen .app { min-height: calc(100dvh - 6px); max-width: none; padding: 0; }
-.welcome-screen .app-header { position: absolute; z-index: 2; top: 20px; right: 54px; left: 28px; min-height: 44px; border: 0; }
+.welcome-screen .app-header { position: absolute; z-index: 2; top: 18px; right: clamp(20px, 3vw, 44px); left: clamp(20px, 3vw, 44px); min-height: 44px; border: 0; }
 .welcome-screen .demo, .welcome-screen footer { display: none; }
-.welcome-screen #home { min-height: 44px; padding: 0; gap: 5px; background: none; border: 0; border-radius: 0; box-shadow: none; color: #ff0617; font-size: 18px; font-style: italic; font-weight: 700; letter-spacing: -.3px; }
-.welcome-screen #home .icon { width: 19px; height: 19px; color: #930008; stroke-width: 3.5; }
-.welcome-screen #main { display: grid; place-items: center; padding: 0; }
-.welcome-screen .welcome { container-type: inline-size; position: relative; display: block; width: 100%; max-width: 1048px; height: calc(100dvh - 6px); max-height: 760px; min-height: 0; margin: 0 auto; padding: 0; }
+.welcome-screen #home { min-height: 44px; padding: 0; gap: 6px; background: none; border: 0; border-radius: 0; box-shadow: none; color: #ff0617; font-size: 18px; font-style: italic; font-weight: 700; letter-spacing: -.3px; }
+.welcome-screen #home .icon { width: 19px; height: 19px; color: #930008; }
+.welcome-screen #main { display: flex; align-items: center; justify-content: center; padding: 84px clamp(20px, 3vw, 40px) 32px; }
+
+.welcome-screen .welcome {
+  --medicine-width: clamp(150px, 26cqw, 288px);
+  --medicine-gap: clamp(20px, 2.8cqw, 32px);
+  --edge-gutter: clamp(12px, 1.6cqw, 20px);
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0;
+}
 
 .welcome .welcome-title {
-  position: absolute;
-  left: 18.65%;
-  top: 11.7%;
+  width: 100%;
   margin: 0;
   color: #4caf50;
   font-family: "Poppins", sans-serif;
-  font-size: 8.21cqw;
+  font-size: clamp(40px, 8cqw, 86px);
   font-weight: 800;
-  line-height: .78;
-  letter-spacing: -.363cqw;
-  text-align: left;
+  line-height: .92;
+  letter-spacing: -.28cqw;
+  word-spacing: .03em;
+  text-align: center;
   -webkit-text-stroke: 3px #111613;
   paint-order: stroke fill;
 }
-
-.welcome .welcome-title > span { display: block; color: inherit; white-space: nowrap; }
-.welcome .welcome-title > span:last-child { letter-spacing: -.39cqw; }
-.welcome .welcome-description { position: absolute; top: 36.3%; left: 20%; width: 54%; margin: 0; color: #9d9fa1; font-size: 2.1cqw; line-height: .9; font-weight: 400; letter-spacing: -.015cqw; text-align: center; }
+.welcome .welcome-title > span { display: block; width: max-content; max-width: 100%; margin-inline: auto; color: inherit; white-space: nowrap; }
+.welcome .welcome-description { width: 100%; max-width: 640px; margin: 18px 0 0; color: #8c9490; font-size: clamp(14px, 1.9cqw, 20px); line-height: 1.25; font-weight: 400; letter-spacing: -.01em; text-align: center; }
 .welcome-description > span { display: block; }
-.welcome-description > span:last-child { font-size: 2.12cqw; font-weight: 600; letter-spacing: 0; }
+.welcome-description > span:last-child { font-weight: 600; }
 
-/* Each group includes its trailing spacing. Moving half the two-group track
-   therefore lands on an identical frame at every iteration. */
-.medicine-loop { position: absolute; top: 41.7%; left: 9.4%; width: 82%; height: 31%; overflow: hidden; }
-.medicine-track { display: flex; width: max-content; margin-left: 1.2cqw; animation: medicine-flow 18s linear infinite; will-change: transform; }
-.medicine-group { display: flex; flex: none; align-items: flex-start; gap: 2.8cqw; padding: 1.25cqw 2.8cqw 1.25cqw 0; }
-.loop-medicine { position: relative; flex: 0 0 24.5cqw; width: 24.5cqw; margin: 0; }
-.loop-medicine.cetirizine { margin-top: 1.8cqw; }
-.loop-medicine.diatabs { margin-top: 1.6cqw; }
-.loop-medicine::before { content: ""; position: absolute; inset: 0; background: #202624; opacity: .55; transform: translate(-5px, 1px) skewY(-5deg); filter: blur(1.4px); }
+/* Include the trailing gap in both identical groups so each iteration has
+   exactly the same geometry. Edge gutters keep the first frame symmetric. */
+.medicine-loop {
+  width: min(100%, calc(var(--medicine-width) * 3 + var(--medicine-gap) * 2 + var(--edge-gutter) * 2));
+  margin-top: 20px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--edge-gutter), #000 calc(100% - var(--edge-gutter)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--edge-gutter), #000 calc(100% - var(--edge-gutter)), transparent);
+}
+.medicine-track { display: flex; width: max-content; margin-left: var(--edge-gutter); animation: medicine-flow 18s linear infinite; will-change: transform; }
+.medicine-group { display: flex; flex: none; align-items: center; gap: var(--medicine-gap); height: calc(var(--medicine-width) * .58 + 32px); padding: 16px var(--medicine-gap) 16px 0; }
+.loop-medicine { position: relative; flex: 0 0 var(--medicine-width); width: var(--medicine-width); margin: 0; }
+.loop-medicine::before { content: ""; position: absolute; inset: 0; background: #202624; opacity: .38; transform: translate(-3px, 5px) skewY(-3deg); filter: blur(2px); animation: medicine-float 4.8s ease-in-out infinite; }
 .loop-medicine img { position: relative; display: block; width: 100%; max-width: none; height: auto; border: 0; border-radius: 0; user-select: none; animation: medicine-float 4.8s ease-in-out infinite; }
-.loop-medicine.diatabs img { animation-delay: -1.6s; }
-.loop-medicine.biogesic img { animation-delay: -3.2s; }
 
-.welcome .begin-button { position: absolute; left: 37.3%; top: 78.65%; display: flex; align-items: center; justify-content: center; gap: 0; width: 21.7%; height: 7.6%; min-width: 0; min-height: 44px; padding: 0; border: 1px solid var(--ink); border-radius: 999px; background: var(--green); color: white; box-shadow: none; font-family: "Inter", sans-serif; font-size: 2.1cqw; font-weight: 400; letter-spacing: -.03cqw; }
-.welcome .begin-button:hover:not(:disabled) { background: #4caf50; box-shadow: 0 4px 0 #1523182b, 0 0 0 5px #4caf5014; transform: translateY(-2px); }
+.welcome .begin-button { display: flex; align-items: center; justify-content: center; gap: 0; width: clamp(220px, 22cqw, 248px); max-width: 100%; height: 50px; min-width: 0; min-height: 44px; margin-top: 24px; padding: 0 24px; border: 1px solid var(--ink); border-radius: 999px; background: var(--green); color: white; box-shadow: 0 3px 0 #15231816; font-family: "Inter", sans-serif; font-size: clamp(17px, 1.9cqw, 20px); font-weight: 500; letter-spacing: -.02em; }
+.welcome .begin-button:hover:not(:disabled) { background: #4caf50; box-shadow: 0 5px 0 #15231824, 0 0 0 5px #4caf5014; transform: translateY(-2px); }
 .welcome .begin-button:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: none; }
 .welcome .begin-button:focus-visible { outline: 3px solid #151a16; outline-offset: 5px; }
 
@@ -59,27 +72,30 @@ body.welcome-screen {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
 }
-
 @keyframes medicine-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+  50% { transform: translateY(-4px); }
+}
+
+@media (min-width: 651px) and (max-height: 700px) {
+  .welcome-screen #main { padding-top: 72px; padding-bottom: 24px; }
+  .welcome .welcome-title { font-size: clamp(40px, 7.8cqw, 82px); line-height: .9; }
+  .welcome .welcome-description { margin-top: 16px; }
+  .medicine-loop { margin-top: 16px; }
+  .welcome .begin-button { height: 48px; margin-top: 18px; }
 }
 
 @media (max-width: 650px) {
-  .welcome-screen .app-header { top: 15px; right: 22px; left: 20px; }
+  .welcome-screen .app-header { top: 16px; }
   .welcome-screen #home { font-size: 15px; }
-  .welcome-screen .welcome { max-height: none; }
-  .welcome .welcome-title { left: 8%; top: 23%; font-size: 10cqw; letter-spacing: -.44cqw; -webkit-text-stroke-width: 2px; }
-  .welcome .welcome-description { left: 5%; top: 38%; width: 90%; font-size: 3.5cqw; line-height: 1.05; }
-  .welcome-description > span:last-child { font-size: 3.5cqw; }
-  .medicine-loop { top: 46%; left: 0; width: 100%; height: 23%; }
-  .medicine-track { margin-left: 2cqw; }
-  .medicine-group { gap: 4cqw; padding: 3cqw 4cqw 3cqw 0; }
-  .loop-medicine { flex-basis: 30cqw; width: 30cqw; }
-  .welcome .begin-button { left: 25%; top: 73%; width: 50%; height: 46px; font-size: 17px; letter-spacing: -.5px; }
+  .welcome-screen #main { padding: 88px 24px 40px; }
+  .welcome .welcome-title { font-size: clamp(30px, 10cqw, 48px); line-height: 1; letter-spacing: -.3cqw; -webkit-text-stroke-width: 2px; }
+  .welcome .welcome-description { margin-top: 16px; font-size: clamp(13px, 3.7cqw, 16px); line-height: 1.4; }
+  .medicine-loop { margin-top: 20px; }
+  .welcome .begin-button { width: min(240px, 100%); height: 48px; margin-top: 20px; font-size: 17px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Keep the requested continuous carousel; reduce only its decorative bob. */
-  .loop-medicine img { animation: none; }
+  /* The requested horizontal loop remains active; only decorative bob stops. */
+  .loop-medicine img, .loop-medicine::before { animation: none; }
 }
