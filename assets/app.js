@@ -57,24 +57,15 @@ function steps(current) {
 }
 
 function welcome() {
-  return `<section class="welcome">
-    <div class="welcome-copy">
-      <p class="eyebrow"><span></span> Your clinic, a touch closer</p>
-      <h1>A little care.<br><span>A better day.</span></h1>
-      <p class="sub">Your clinic essentials, all in one place.<br>Choose your items. We’ll keep it simple.</p>
-      <button class="primary begin-button" data-action="begin">Let’s get started ${icon('arrow')}</button>
-      <div class="welcome-details"><span>${icon('bag')} 3 clinic essentials</span><i></i><span>₱10 each</span></div>
+  const collection = [products[2], products[0], products[1]];
+  const medicineGroup = duplicate => `<div class="medicine-group"${duplicate ? ' aria-hidden="true" inert' : ''}>${collection.map(product => `<figure class="loop-medicine ${product.id}"><img src="${product.image}" alt="" draggable="false"></figure>`).join('')}</div>`;
+  return `<section class="welcome" aria-labelledby="welcome-title">
+    <h1 id="welcome-title" class="welcome-title"><span>A LITTLE CARE.</span><span>A BETTER DAY.</span></h1>
+    <p class="welcome-description"><span>Your clinic essentials, all in one place.</span><span>Choose your items. We'll keep it simple.</span></p>
+    <div class="medicine-loop" role="img" aria-label="Cetirizine, Diatabs, and Biogesic medicine packaging">
+      <div class="medicine-track">${medicineGroup(false)}${medicineGroup(true)}</div>
     </div>
-    <div class="hero-art" aria-label="Diatabs, Biogesic, and Cetirizine product collection">
-      <div class="hero-orbit orbit-one"></div><div class="hero-orbit orbit-two"></div>
-      <div class="hero-caption">THE EVERYDAY COLLECTION</div>
-      ${products.map((product, index) => `<div class="hero-product hero-product-${index + 1}">
-        <div class="hero-photo ${product.color}"><img src="${product.image}" alt="${product.name} packaging" width="468" height="254"></div>
-        <div class="hero-product-label"><strong>${product.name}</strong><span>₱10</span></div>
-      </div>`).join('')}
-      <div class="hero-note">${icon('spark')} A little care goes a long way.</div>
-    </div>
-    <p class="welcome-note">${icon('shield')} A demo experience. For use with school clinic guidance.</p>
+    <button class="primary begin-button" data-action="begin">Get Started</button>
   </section>`;
 }
 
@@ -133,7 +124,15 @@ function success() {
 }
 
 function render() {
+  document.body.classList.toggle('welcome-screen', screen === 'welcome');
   main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : success();
+  if (screen === 'welcome') {
+    const track = main.querySelector('.medicine-track');
+    // Decode both identical groups before moving them, avoiding an empty first lap.
+    Promise.all([...track.querySelectorAll('img')].map(image => image.decode().catch(() => {}))).then(() => {
+      if (track.isConnected) track.classList.add('is-ready');
+    });
+  }
 }
 
 function refreshCart(button, message) {
@@ -199,17 +198,19 @@ function requestReset() {
   }
 }
 
-document.querySelector('#home').addEventListener('click', requestReset);
+function resetSession() {
+  document.querySelector('#reset-dialog').close();
+  cart.clear();
+  lastOrder = null;
+  go('welcome');
+}
+
+document.querySelector('#home').addEventListener('click', resetSession);
 document.querySelector('.brand').addEventListener('click', event => {
   event.preventDefault();
   requestReset();
 });
 document.querySelector('#keep').addEventListener('click', () => document.querySelector('#reset-dialog').close());
-document.querySelector('#reset').addEventListener('click', () => {
-  document.querySelector('#reset-dialog').close();
-  cart.clear();
-  lastOrder = null;
-  go('welcome');
-});
+document.querySelector('#reset').addEventListener('click', resetSession);
 
 render();

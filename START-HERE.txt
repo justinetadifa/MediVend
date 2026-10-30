@@ -4,7 +4,7 @@ QUICKEST START (no installation)
 1. Extract the ZIP first. Do not open index.html from inside the ZIP.
 2. Open the extracted MediVend folder in Visual Studio Code.
 3. Double-click index.html in Windows File Explorer to open it in your browser.
-4. Tap “Tap to begin”. Add medicines, adjust quantities, remove items, and check out.
+4. Tap “Get Started”. Add medicines, adjust quantities, remove items, and check out.
 
 WITH XAMPP
 1. Copy the MediVend folder to C:\xampp\htdocs\
@@ -23,13 +23,14 @@ ON YOUR 7-INCH SCREEN
 Touch mapping to the wrong display is a Windows display setup issue, not an app issue.
 
 WHAT IS INCLUDED
-- iOS-inspired clean layout using local system fonts and custom CSS.
+- Reference-matched welcome screen with local Poppins and Inter fonts.
+- Continuous right-to-left medicine photo loop, with reduced-motion support.
 - Welcome screen and Diatabs, Biogesic, and Cetirizine listings at PHP 10 each.
 - Local product photos on the welcome screen, catalog, cart, and order summary.
 - Add to cart, increase/decrease quantity, remove, and computed PHP-peso totals.
 - Maximum ten units of each sample item per cart.
 - Empty-cart checkout prevention, review screen, demo acknowledgement.
-- Sample order confirmation and start-over confirmation.
+- Sample order confirmation and one-tap “Start over” session reset.
 - Responsive layout, touch-sized controls, keyboard focus styling.
 - No remote fonts, images, CDNs, dependencies, internet, or build step.
 
@@ -43,7 +44,8 @@ is a simulation, not proof of payment or physical dispensing.
 
 FILES TO EDIT
 index.html       Page shell, header, footer, reset dialog.
-assets/style.css All layout, colors, sizes and responsive rules.
+assets/style.css Shared catalog, cart, checkout, and responsive styles.
+assets/welcome.css Reference welcome layout, typography, and medicine animation.
 assets/app.js    Sample catalog, cart logic and screen navigation.
 
 To change sample names/prices, edit the products array at the top of app.js.
