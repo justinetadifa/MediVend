@@ -1,0 +1,60 @@
+MEDIVEND — TOUCHSCREEN STARTER
+
+QUICKEST START (no installation)
+1. Extract the ZIP first. Do not open index.html from inside the ZIP.
+2. Open the extracted MediVend folder in Visual Studio Code.
+3. Double-click index.html in Windows File Explorer to open it in your browser.
+4. Tap “Tap to begin”. Add medicines, adjust quantities, remove items, and check out.
+
+WITH XAMPP
+1. Copy the MediVend folder to C:\xampp\htdocs\
+2. Start Apache in the XAMPP Control Panel.
+3. Visit http://localhost/MediVend/
+MySQL is not required for this version. No PHP backend is included yet.
+
+ON YOUR 7-INCH SCREEN
+1. Keep HDMI and screen power connected.
+2. Connect the screen's TOUCH port to your laptop using a USB data cable.
+3. Use Windows + P > Extend.
+4. In Display settings, select the small display and use 1024 x 600,
+   landscape, with 100% scaling if available. Set browser zoom to 100%.
+5. Select the browser and press Windows + Shift + Left/Right to move it.
+6. Press F11 for full screen (on some laptops, Fn + F11).
+Touch mapping to the wrong display is a Windows display setup issue, not an app issue.
+
+WHAT IS INCLUDED
+- iOS-inspired clean layout using local system fonts and custom CSS.
+- Welcome screen and three sample medicine listings.
+- Add to cart, increase/decrease quantity, remove, and computed PHP-peso totals.
+- Maximum ten units of each sample item per cart.
+- Empty-cart checkout prevention, review screen, demo acknowledgement.
+- Sample order confirmation and start-over confirmation.
+- Responsive layout, touch-sized controls, keyboard focus styling.
+- No external fonts, images, CDNs, dependencies, internet, or build step.
+
+DEMO BOUNDARIES
+This is a frontend learning prototype. Products, prices and availability are
+samples. No medicine recommendations or dosage instructions are provided.
+It does not accept money, reserve real inventory, connect to hardware,
+authenticate staff, or store orders in a database. Cart/order state lives
+only in memory; refreshing the page clears the session. “Complete demo order”
+is a simulation, not proof of payment or physical dispensing.
+
+FILES TO EDIT
+index.html       Page shell, header, footer, reset dialog.
+assets/style.css All layout, colors, sizes and responsive rules.
+assets/app.js    Sample catalog, cart logic and screen navigation.
+
+To change sample names/prices, edit the products array at the top of app.js.
+Prices are whole centavos: 500 = PHP 5.00. This avoids decimal money rounding.
+Do not insert untrusted HTML into product fields; this starter treats its
+hard-coded catalog as trusted developer content.
+
+NEXT DEVELOPMENT PHASE
+Build a PHP API + MySQL/MariaDB database. The backend must supply authoritative
+prices, stock, payment state and transaction IDs. Then integrate a hardware
+bridge for the Orange Pi/Arduino. Never trigger motors solely from a browser
+cart or mark a dispense successful without hardware confirmation. Test jams,
+repeated taps, payment failures and power interruptions before real use.
+Use simulated items during development and clinic-approved procedures for
+any supervised medication testing.
