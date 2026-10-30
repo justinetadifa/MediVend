@@ -24,13 +24,14 @@ Touch mapping to the wrong display is a Windows display setup issue, not an app 
 
 WHAT IS INCLUDED
 - iOS-inspired clean layout using local system fonts and custom CSS.
-- Welcome screen and three sample medicine listings.
+- Welcome screen and Diatabs, Biogesic, and Cetirizine listings at PHP 10 each.
+- Local product photos on the welcome screen, catalog, cart, and order summary.
 - Add to cart, increase/decrease quantity, remove, and computed PHP-peso totals.
 - Maximum ten units of each sample item per cart.
 - Empty-cart checkout prevention, review screen, demo acknowledgement.
 - Sample order confirmation and start-over confirmation.
 - Responsive layout, touch-sized controls, keyboard focus styling.
-- No external fonts, images, CDNs, dependencies, internet, or build step.
+- No remote fonts, images, CDNs, dependencies, internet, or build step.
 
 DEMO BOUNDARIES
 This is a frontend learning prototype. Products, prices and availability are
@@ -46,7 +47,7 @@ assets/style.css All layout, colors, sizes and responsive rules.
 assets/app.js    Sample catalog, cart logic and screen navigation.
 
 To change sample names/prices, edit the products array at the top of app.js.
-Prices are whole centavos: 500 = PHP 5.00. This avoids decimal money rounding.
+Prices are whole centavos: 1000 = PHP 10.00. This avoids decimal money rounding.
 Do not insert untrusted HTML into product fields; this starter treats its
 hard-coded catalog as trusted developer content.
 

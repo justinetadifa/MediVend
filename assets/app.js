@@ -1,36 +1,215 @@
-/* Offline UI prototype. Prices, availability and transactions are demonstrations.
-   Real stock/payment/dispensing must be validated by a future backend. */
+/* Offline clinic demo. A future backend must validate real stock, payment,
+   and dispensing. Prices below are in centavos. */
 const products = [
-  {id:'para',name:'Paracetamol',description:'Sample medicine listing',price:500,stock:10,tint:'#eaf1ed',accent:'#72a48b'},
-  {id:'ceti',name:'Cetirizine',description:'Sample medicine listing',price:800,stock:10,tint:'#edf0f8',accent:'#9ba9d3'},
-  {id:'anta',name:'Antacid',description:'Sample medicine listing',price:600,stock:10,tint:'#f7eee6',accent:'#d9b18c'}
+  { id: 'diatabs', name: 'Diatabs', description: 'Loperamide', form: 'Capsule', price: 1000, stock: 10, image: 'assets/diatabs.png', color: 'mint' },
+  { id: 'biogesic', name: 'Biogesic', description: 'Paracetamol', form: 'Tablet', price: 1000, stock: 10, image: 'assets/biogesic.png', color: 'blue' },
+  { id: 'cetirizine', name: 'Cetirizine', description: 'Cetirizine dihydrochloride', form: 'Tablet', price: 1000, stock: 10, image: 'assets/cetirizine.png', color: 'lavender' }
 ];
-const main=document.querySelector('#main');
-const cart=new Map(); let screen='welcome'; let lastOrder=null; let toastTimer;
-const money=n=>new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(n/100);
-const quantity=()=>[...cart.values()].reduce((a,b)=>a+b,0);
-const total=()=>products.reduce((sum,p)=>sum+p.price*(cart.get(p.id)||0),0);
-function announce(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2200);}
-function go(next){screen=next;render();window.scrollTo(0,0);const title=main.querySelector('h1');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
-function welcome(){return `<section class="welcome"><div><p class="eyebrow">A little care, made simpler</p><h1>Welcome to<br>MediVend.</h1><p class="sub">A simple way to explore available clinic medicines and prepare your order.</p><button class="primary" data-action="begin">Tap to begin <span aria-hidden="true"> →</span></button><p class="welcome-note">For use under school clinic supervision.</p></div><div class="hero-art" aria-hidden="true"><div class="pack"><span class="pack-symbol">✚</span><div><small>CLINIC ESSENTIALS</small><br><strong>A little<br>everyday care.</strong></div></div><span class="floating-label">Thoughtfully simple. Touch to explore.</span></div></section>`;}
-function cartMarkup(){return `<aside class="cart" aria-label="Shopping cart"><div class="cart-heading"><h2>Your cart</h2><span class="count">${quantity()} item${quantity()===1?'':'s'}</span></div><div class="cart-items">${quantity()?products.filter(p=>cart.has(p.id)).map(p=>`<div class="cart-row"><div class="row-top"><span>${p.name}</span><span>${money(p.price*cart.get(p.id))}</span></div><div class="row-controls"><div class="quantity"><button data-action="minus" data-id="${p.id}" aria-label="Decrease ${p.name}">−</button><span>${cart.get(p.id)}</span><button data-action="add" data-id="${p.id}" aria-label="Increase ${p.name}" ${cart.get(p.id)>=p.stock?'disabled':''}>+</button></div><button class="remove" data-action="remove" data-id="${p.id}" aria-label="Remove ${p.name}">Remove</button></div></div>`).join(''):'<div class="empty"><span class="empty-icon" aria-hidden="true">＋</span>A little empty here.<br>Add an item to get started.</div>'}</div><div class="total"><span>Total</span><strong>${money(total())}</strong></div><button class="primary" data-action="checkout" ${!quantity()?'disabled':''}>Proceed to checkout →</button><p class="notice">Demo only. Medicine selection and use require guidance from clinic staff.</p></aside>`;}
-function shop(){return `<section><div class="page-head"><div><p class="eyebrow" style="margin-bottom:8px">Clinic essentials</p><h1>A little care starts here.</h1><p class="sub">Choose from our sample catalog.</p></div><span class="step">01 / Select items</span></div><div class="shop-layout"><div><div class="products">${products.map(p=>`<article class="product"><div class="product-art" style="--tint:${p.tint};--accent:${p.accent}" aria-hidden="true"><span class="medicine-icon"></span></div><h3>${p.name}</h3><p class="sample">Demo product · Sample price</p><p class="product-desc">${p.description}</p><div class="product-bottom"><span class="price">${money(p.price)}</span><span class="stock">${p.stock-(cart.get(p.id)||0)} left to add</span></div><button class="add" data-action="add" data-id="${p.id}" ${cart.get(p.id)>=p.stock?'disabled':''}>${cart.get(p.id)>=p.stock?'Limit reached':'+ Add to cart'}</button></article>`).join('')}</div><p class="notice">Availability is simulated. This interface does not recommend medicines or provide dosage advice.</p></div>${cartMarkup()}</div></section>`;}
-function checkout(){return `<section class="checkout"><button class="back" data-action="shop">← Back to medicines</button><div class="page-head"><div><h1>One last look.</h1><p class="sub">Review your items before completing the demo.</p></div><span class="step">02 / Review order</span></div><div class="checkout-grid"><div class="panel"><h2>Order summary</h2>${products.filter(p=>cart.has(p.id)).map(p=>`<div class="summary-line"><span>${p.name} <small>× ${cart.get(p.id)}</small></span><strong>${money(p.price*cart.get(p.id))}</strong></div>`).join('')}<div class="total"><span>Total</span><strong>${money(total())}</strong></div><p class="notice">All amounts are sample prices.</p></div><div class="panel"><h2>Demo checkout</h2><div class="demo-box">No coins or payment are required. Completing this demo will not activate any dispensing hardware.</div><label class="check-label"><input id="ack" type="checkbox"><span>I understand this is a demonstration, and actual medicine use requires clinic supervision.</span></label><button id="complete" class="primary" data-action="complete" disabled>Complete demo order →</button><p class="notice">Need to change something? Go back to edit your cart.</p></div></div></section>`;}
-function success(){return `<section class="success"><div class="success-icon" aria-hidden="true">✓</div><p class="eyebrow">Demo complete</p><h1>You're all set.</h1><p class="sub">Your sample order has been completed.<br>No payment was taken and no medicine was dispensed.</p><div class="panel"><div class="row-top"><span>Demo order</span><span>${lastOrder.id}</span></div>${lastOrder.items.map(p=>`<div class="summary-line"><span>${p.name} × ${p.qty}</span><strong>${money(p.price*p.qty)}</strong></div>`).join('')}<div class="total"><span>Sample total</span><strong>${money(lastOrder.total)}</strong></div></div><button class="primary" data-action="new">Start a new session →</button></section>`;}
-function render(){main.innerHTML=screen==='welcome'?welcome():screen==='shop'?shop():screen==='checkout'?checkout():success();}
-main.addEventListener('click',e=>{const b=e.target.closest('button[data-action]');if(!b||b.disabled)return;const action=b.dataset.action;const p=products.find(p=>p.id===b.dataset.id);
- if(action==='begin'||action==='shop')go('shop');
- if(action==='add'&&p){const q=cart.get(p.id)||0;if(q<p.stock){cart.set(p.id,q+1);render();announce(`${p.name} added to cart`);}}
- if(action==='minus'&&p){const q=cart.get(p.id)||0;if(q>1)cart.set(p.id,q-1);else cart.delete(p.id);render();announce('Cart updated');}
- if(action==='remove'&&p){cart.delete(p.id);render();announce(`${p.name} removed`);}
- if(action==='checkout'&&quantity())go('checkout');
- if(action==='complete'&&screen==='checkout'&&quantity()&&document.querySelector('#ack')?.checked){lastOrder={id:'MV-'+Date.now().toString(36).toUpperCase(),total:total(),items:products.filter(p=>cart.has(p.id)).map(p=>({...p,qty:cart.get(p.id)}))};cart.clear();go('success');}
- if(action==='new'){lastOrder=null;cart.clear();go('welcome');}
+
+const iconPaths = {
+  arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+  back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  bag: '<path d="M5 8h14l1 12H4L5 8Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/>',
+  spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>'
+};
+const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]}</svg>`;
+const main = document.querySelector('#main');
+const cart = new Map();
+let screen = 'welcome';
+let lastOrder = null;
+let toastTimer;
+
+const money = amount => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount / 100);
+const quantity = () => [...cart.values()].reduce((sum, count) => sum + count, 0);
+const total = () => products.reduce((sum, product) => sum + product.price * (cart.get(product.id) || 0), 0);
+
+function announce(message) {
+  const toast = document.querySelector('#toast');
+  toast.innerHTML = `${icon('check')}<span></span>`;
+  toast.querySelector('span').textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+function go(next) {
+  clearTimeout(toastTimer);
+  document.querySelector('#toast').classList.remove('show');
+  screen = next;
+  render();
+  window.scrollTo(0, 0);
+  const title = main.querySelector('h1');
+  if (title) {
+    title.tabIndex = -1;
+    title.focus({ preventScroll: true });
+  }
+}
+
+function steps(current) {
+  return `<div class="steps" aria-label="Step ${current} of 2: ${current === 1 ? 'Select medicines' : 'Review order'}">
+    <span class="${current === 1 ? 'active' : 'done'}"><b>${current === 2 ? icon('check') : '1'}</b>Select</span>
+    <i aria-hidden="true"></i><span class="${current === 2 ? 'active' : ''}"><b>2</b>Review</span>
+  </div>`;
+}
+
+function welcome() {
+  return `<section class="welcome">
+    <div class="welcome-copy">
+      <p class="eyebrow"><span></span> Your clinic, a touch closer</p>
+      <h1>A little care.<br><span>A better day.</span></h1>
+      <p class="sub">Your clinic essentials, all in one place.<br>Choose your items. We’ll keep it simple.</p>
+      <button class="primary begin-button" data-action="begin">Let’s get started ${icon('arrow')}</button>
+      <div class="welcome-details"><span>${icon('bag')} 3 clinic essentials</span><i></i><span>₱10 each</span></div>
+    </div>
+    <div class="hero-art" aria-label="Diatabs, Biogesic, and Cetirizine product collection">
+      <div class="hero-orbit orbit-one"></div><div class="hero-orbit orbit-two"></div>
+      <div class="hero-caption">THE EVERYDAY COLLECTION</div>
+      ${products.map((product, index) => `<div class="hero-product hero-product-${index + 1}">
+        <div class="hero-photo ${product.color}"><img src="${product.image}" alt="${product.name} packaging" width="468" height="254"></div>
+        <div class="hero-product-label"><strong>${product.name}</strong><span>₱10</span></div>
+      </div>`).join('')}
+      <div class="hero-note">${icon('spark')} A little care goes a long way.</div>
+    </div>
+    <p class="welcome-note">${icon('shield')} A demo experience. For use with school clinic guidance.</p>
+  </section>`;
+}
+
+function productCard(product, index) {
+  const count = cart.get(product.id) || 0;
+  const atLimit = count >= product.stock;
+  return `<article class="product ${count ? 'in-cart' : ''}">
+    <div class="product-art ${product.color}">
+      <span class="product-number">0${index + 1}</span>
+      <span class="form-label">${product.form}</span>
+      <img src="${product.image}" alt="${product.name} packaging" width="468" height="254" draggable="false">
+      ${count ? `<span class="selected-badge">${icon('check')} ${count} in cart</span>` : ''}
+    </div>
+    <div class="product-info"><h2>${product.name}</h2><p class="product-desc">${product.description}</p></div>
+    <div class="product-bottom"><span class="price">${money(product.price)}<small> / each</small></span><span class="stock">${product.stock - count} left to add</span></div>
+    <button class="add" data-action="add" data-id="${product.id}" aria-label="Add ${product.name} to cart" ${atLimit ? 'disabled' : ''}>${icon(atLimit ? 'check' : 'plus')} ${atLimit ? 'Limit reached' : count ? 'Add another' : 'Add to cart'}</button>
+  </article>`;
+}
+
+function cartMarkup() {
+  const count = quantity();
+  return `<aside class="cart" aria-labelledby="cart-title">
+    <div class="cart-heading"><h2 id="cart-title">${icon('bag')} Your cart</h2><span class="count">${count}</span></div>
+    <div class="cart-items">${count ? products.filter(product => cart.has(product.id)).map(product => `<div class="cart-row">
+      <div class="cart-product"><div class="cart-thumb ${product.color}"><img src="${product.image}" alt="" width="70" height="45"></div><div><h3>${product.name}</h3><p>${money(product.price)} each</p></div><strong>${money(product.price * cart.get(product.id))}</strong></div>
+      <div class="row-controls"><button class="remove" data-action="remove" data-id="${product.id}" aria-label="Remove ${product.name}">Remove</button><div class="quantity"><button data-action="minus" data-id="${product.id}" aria-label="Decrease ${product.name}">${icon('minus')}</button><span aria-label="${cart.get(product.id)} ${product.name} in cart">${cart.get(product.id)}</span><button data-action="add" data-id="${product.id}" aria-label="Increase ${product.name}" ${cart.get(product.id) >= product.stock ? 'disabled' : ''}>${icon('plus')}</button></div></div>
+    </div>`).join('') : `<div class="empty"><span class="empty-icon">${icon('bag')}<span>+</span></span><h3>A little empty here.</h3><p>Add something from the collection<br>to get started.</p></div>`}</div>
+    <div class="cart-bottom"><div class="total"><div><span>Total</span><small>${count} item${count === 1 ? '' : 's'} in your cart</small></div><strong>${money(total())}</strong></div>
+    <button class="primary checkout-button" data-action="checkout" ${!count ? 'disabled' : ''}>Review order ${icon('arrow')}</button>
+    <p class="cart-note">${icon('shield')} Demo only. No payment required.</p></div>
+  </aside>`;
+}
+
+function shop() {
+  return `<section class="shop">
+    <div class="page-head"><div><p class="eyebrow"><span></span> The clinic collection</p><h1>A little care starts here.</h1><p class="sub">Three everyday essentials. One simple price.</p></div>${steps(1)}</div>
+    <div class="collection-bar"><div><span class="collection-dot"></span><span>All medicines</span><small>03</small></div><span class="collection-price">₱10 <span>each</span></span></div>
+    <div class="shop-layout"><div class="catalog"><div class="products">${products.map(productCard).join('')}</div><p class="catalog-note">${icon('shield')} Sample prices & availability. Choose medicines with guidance from clinic staff.</p></div>${cartMarkup()}</div>
+  </section>`;
+}
+
+function summaryLine(product, count) {
+  return `<div class="summary-line"><div class="summary-product"><div class="summary-thumb ${product.color}"><img src="${product.image}" alt="${product.name} packaging" width="80" height="48"></div><div><strong>${product.name}</strong><small>${money(product.price)} × ${count}</small></div></div><strong>${money(product.price * count)}</strong></div>`;
+}
+
+function checkout() {
+  return `<section class="checkout"><button class="back" data-action="shop">${icon('back')} Back to collection</button>
+    <div class="page-head"><div><p class="eyebrow">Almost there</p><h1>One last look.</h1><p class="sub">A quick review before you finish.</p></div>${steps(2)}</div>
+    <div class="checkout-grid"><div class="panel order-panel"><div class="panel-heading"><h2>Your selection</h2><span class="count">${quantity()} item${quantity() === 1 ? '' : 's'}</span></div>${products.filter(product => cart.has(product.id)).map(product => summaryLine(product, cart.get(product.id))).join('')}<div class="total"><span>Order total</span><strong>${money(total())}</strong></div><p class="notice">All items are ₱10 each. Prices are for this demo.</p></div>
+    <div class="panel checkout-panel"><span class="panel-icon">${icon('shield')}</span><h2>A simple demo checkout.</h2><p class="sub">No coins, payment, or dispensing. Just a preview of your MediVend experience.</p><label class="check-label"><input id="ack" type="checkbox"><span>I understand this is a demo and medicine use requires clinic supervision.</span></label><button id="complete" class="primary" data-action="complete" disabled>Complete demo order ${icon('arrow')}</button><p class="cart-note">You can go back and edit your items anytime.</p></div></div>
+  </section>`;
+}
+
+function success() {
+  return `<section class="success"><div class="success-intro"><div class="success-icon">${icon('check')}</div><p class="eyebrow">Demo complete</p><h1>A little care, all set.</h1><p class="sub">Your sample order is complete.<br>No payment was taken and no medicine was dispensed.</p></div><div class="panel"><div class="order-reference"><span>Demo order</span><span>${lastOrder.id}</span></div>${lastOrder.items.map(product => summaryLine(product, product.qty)).join('')}<div class="total"><span>Sample total</span><strong>${money(lastOrder.total)}</strong></div></div><button class="primary" data-action="new">Start a new session ${icon('arrow')}</button></section>`;
+}
+
+function render() {
+  main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : success();
+}
+
+function refreshCart(button, message) {
+  const { action, id } = button.dataset;
+  const region = button.closest('.cart') ? '.cart' : '.products';
+  render();
+  const replacement = main.querySelector(`${region} button[data-action="${action}"][data-id="${id}"]:not(:disabled)`);
+  const fallback = main.querySelector(`.cart button[data-action="minus"][data-id="${id}"]`) || main.querySelector(`.products button[data-id="${id}"]:not(:disabled)`);
+  (replacement || fallback)?.focus({ preventScroll: true });
+  announce(message);
+}
+
+main.addEventListener('click', event => {
+  const button = event.target.closest('button[data-action]');
+  if (!button || button.disabled) return;
+  const action = button.dataset.action;
+  const product = products.find(item => item.id === button.dataset.id);
+
+  if (action === 'begin' || action === 'shop') go('shop');
+  if (action === 'add' && product) {
+    const count = cart.get(product.id) || 0;
+    if (count < product.stock) {
+      cart.set(product.id, count + 1);
+      refreshCart(button, `${product.name} added to cart`);
+    }
+  }
+  if (action === 'minus' && product) {
+    const count = cart.get(product.id) || 0;
+    if (count > 1) cart.set(product.id, count - 1);
+    else cart.delete(product.id);
+    refreshCart(button, 'Cart updated');
+  }
+  if (action === 'remove' && product) {
+    cart.delete(product.id);
+    refreshCart(button, `${product.name} removed`);
+  }
+  if (action === 'checkout' && quantity()) go('checkout');
+  if (action === 'complete' && screen === 'checkout' && quantity() && document.querySelector('#ack')?.checked) {
+    lastOrder = {
+      id: 'MV-' + Date.now().toString(36).toUpperCase(),
+      total: total(),
+      items: products.filter(item => cart.has(item.id)).map(item => ({ ...item, qty: cart.get(item.id) }))
+    };
+    cart.clear();
+    go('success');
+  }
+  if (action === 'new') {
+    lastOrder = null;
+    cart.clear();
+    go('welcome');
+  }
 });
-main.addEventListener('change',e=>{if(e.target.id==='ack')document.querySelector('#complete').disabled=!e.target.checked;});
-function requestReset(){if(quantity())document.querySelector('#reset-dialog').showModal();else{lastOrder=null;go('welcome');}}
-document.querySelector('#home').addEventListener('click',requestReset);
-document.querySelector('.brand').addEventListener('click',e=>{e.preventDefault();requestReset();});
-document.querySelector('#keep').addEventListener('click',()=>document.querySelector('#reset-dialog').close());
-document.querySelector('#reset').addEventListener('click',()=>{document.querySelector('#reset-dialog').close();cart.clear();lastOrder=null;go('welcome');});
+
+main.addEventListener('change', event => {
+  if (event.target.id === 'ack') document.querySelector('#complete').disabled = !event.target.checked;
+});
+
+function requestReset() {
+  if (quantity()) document.querySelector('#reset-dialog').showModal();
+  else {
+    lastOrder = null;
+    go('welcome');
+  }
+}
+
+document.querySelector('#home').addEventListener('click', requestReset);
+document.querySelector('.brand').addEventListener('click', event => {
+  event.preventDefault();
+  requestReset();
+});
+document.querySelector('#keep').addEventListener('click', () => document.querySelector('#reset-dialog').close());
+document.querySelector('#reset').addEventListener('click', () => {
+  document.querySelector('#reset-dialog').close();
+  cart.clear();
+  lastOrder = null;
+  go('welcome');
+});
+
 render();

@@ -1,3 +1,42 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f5f6f8"><title>MediVend · Clinic essentials</title><link rel="stylesheet" href="assets/style.css"><script src="assets/app.js" defer></script></head>
-<body><div class="app"><header><a class="brand" href="#" aria-label="MediVend home"><span class="brandmark">✚</span>MediVend<span class="brand-dot">.</span></a><span class="demo"><i></i> Interactive demo</span><button class="text-button" id="home">Start over</button></header><main id="main"></main><footer><span>Made for your school clinic</span><span>Sample catalog & prices · No real payment or dispensing</span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="reset-dialog"><h2>Start a new session?</h2><p>This will clear the current cart.</p><div class="dialog-actions"><button id="keep" class="secondary">Keep shopping</button><button id="reset" class="primary">Start over</button></div></dialog></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f9">
+  <meta name="description" content="Explore the MediVend clinic demo. Diatabs, Biogesic, and Cetirizine, with simple touch-friendly ordering.">
+  <title>MediVend · A little everyday care</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/app.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <a class="brand" href="#" aria-label="MediVend home">
+        <span class="brandmark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" fill="currentColor"/></svg></span>
+        <span>MediVend<span class="brand-dot">.</span></span>
+      </a>
+      <span class="demo"><i aria-hidden="true"></i><span class="demo-full">Interactive </span>demo</span>
+      <button class="text-button" id="home">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2.4 8.1M3 4v6h6"/></svg>
+        <span>Start over</span>
+      </button>
+    </header>
+    <main id="main"></main>
+    <footer>
+      <span class="footer-brand"><span aria-hidden="true">✚</span> A little everyday care.</span>
+      <span>Clinic demo · No real payment or dispensing</span>
+    </footer>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-description">
+    <span class="dialog-icon" aria-hidden="true">↺</span>
+    <h2 id="reset-title">A fresh start?</h2>
+    <p id="reset-description">This will clear the items in your cart and start a new session.</p>
+    <div class="dialog-actions">
+      <button id="keep" class="secondary">Keep shopping</button>
+      <button id="reset" class="primary">Start over</button>
+    </div>
+  </dialog>
+</body>
+</html>
