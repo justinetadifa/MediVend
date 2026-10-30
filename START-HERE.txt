@@ -23,8 +23,10 @@ ON YOUR 7-INCH SCREEN
 Touch mapping to the wrong display is a Windows display setup issue, not an app issue.
 
 WHAT IS INCLUDED
-- Reference-matched welcome screen with local Poppins and Inter fonts.
-- Continuous right-to-left medicine photo loop, with reduced-motion support.
+- Shared MediVend logo, local Poppins/Inter fonts, green buttons, and black outlines.
+- Reference-matched welcome composition with a continuous right-to-left photo loop.
+- The carousel keeps moving under reduced motion; decorative floating is softened.
+- Screen transitions, touch ripples, cart feedback, and animated confirmation.
 - Welcome screen and Diatabs, Biogesic, and Cetirizine listings at PHP 10 each.
 - Local product photos on the welcome screen, catalog, cart, and order summary.
 - Add to cart, increase/decrease quantity, remove, and computed PHP-peso totals.
@@ -46,6 +48,7 @@ FILES TO EDIT
 index.html       Page shell, header, footer, reset dialog.
 assets/style.css Shared catalog, cart, checkout, and responsive styles.
 assets/welcome.css Reference welcome layout, typography, and medicine animation.
+assets/fonts.css Local Poppins and Inter font definitions used by every screen.
 assets/app.js    Sample catalog, cart logic and screen navigation.
 
 To change sample names/prices, edit the products array at the top of app.js.

@@ -40,7 +40,7 @@ function go(next) {
   clearTimeout(toastTimer);
   document.querySelector('#toast').classList.remove('show');
   screen = next;
-  render();
+  render(true);
   window.scrollTo(0, 0);
   const title = main.querySelector('h1');
   if (title) {
@@ -123,15 +123,11 @@ function success() {
   return `<section class="success"><div class="success-intro"><div class="success-icon">${icon('check')}</div><p class="eyebrow">Demo complete</p><h1>A little care, all set.</h1><p class="sub">Your sample order is complete.<br>No payment was taken and no medicine was dispensed.</p></div><div class="panel"><div class="order-reference"><span>Demo order</span><span>${lastOrder.id}</span></div>${lastOrder.items.map(product => summaryLine(product, product.qty)).join('')}<div class="total"><span>Sample total</span><strong>${money(lastOrder.total)}</strong></div></div><button class="primary" data-action="new">Start a new session ${icon('arrow')}</button></section>`;
 }
 
-function render() {
+function render(entering = false) {
   document.body.classList.toggle('welcome-screen', screen === 'welcome');
   main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : success();
-  if (screen === 'welcome') {
-    const track = main.querySelector('.medicine-track');
-    // Decode both identical groups before moving them, avoiding an empty first lap.
-    Promise.all([...track.querySelectorAll('img')].map(image => image.decode().catch(() => {}))).then(() => {
-      if (track.isConnected) track.classList.add('is-ready');
-    });
+  if (entering && screen !== 'welcome') {
+    main.firstElementChild.classList.add('screen-enter');
   }
 }
 
@@ -139,6 +135,7 @@ function refreshCart(button, message) {
   const { action, id } = button.dataset;
   const region = button.closest('.cart') ? '.cart' : '.products';
   render();
+  main.querySelector('.cart')?.classList.add('cart-updated');
   const replacement = main.querySelector(`${region} button[data-action="${action}"][data-id="${id}"]:not(:disabled)`);
   const fallback = main.querySelector(`.cart button[data-action="minus"][data-id="${id}"]`) || main.querySelector(`.products button[data-id="${id}"]:not(:disabled)`);
   (replacement || fallback)?.focus({ preventScroll: true });
@@ -212,5 +209,20 @@ document.querySelector('.brand').addEventListener('click', event => {
 });
 document.querySelector('#keep').addEventListener('click', () => document.querySelector('#reset-dialog').close());
 document.querySelector('#reset').addEventListener('click', resetSession);
+
+document.addEventListener('pointerdown', event => {
+  const button = event.target.closest('.primary:not(:disabled), .secondary:not(:disabled), .add:not(:disabled)');
+  if (!button) return;
+  const bounds = button.getBoundingClientRect();
+  const diameter = Math.max(bounds.width, bounds.height) * 2;
+  const ripple = document.createElement('span');
+  ripple.className = 'tap-ripple';
+  ripple.setAttribute('aria-hidden', 'true');
+  ripple.style.width = ripple.style.height = `${diameter}px`;
+  ripple.style.left = `${event.clientX - bounds.left - diameter / 2}px`;
+  ripple.style.top = `${event.clientY - bounds.top - diameter / 2}px`;
+  ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+  button.append(ripple);
+});
 
 render();

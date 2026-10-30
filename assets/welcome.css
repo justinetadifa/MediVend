@@ -1,29 +1,4 @@
-@font-face {
-  font-family: "Poppins";
-  src: url("fonts/poppins-extrabold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Inter";
-  src: url("fonts/inter-variable.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Inter";
-  src: url("fonts/inter-italic-variable.ttf") format("truetype");
-  font-style: italic;
-  font-weight: 100 900;
-  font-display: swap;
-}
-
-/* The welcome screen follows the supplied composition; other screens keep
-   their existing layout. Coordinates scale with the reference artboard. */
+/* Preserve the reference composition while sharing the app's brand styles. */
 body.welcome-screen {
   min-height: 100dvh;
   border-block: 3px solid #141719;
@@ -33,8 +8,8 @@ body.welcome-screen {
 }
 
 .welcome-screen .app { min-height: calc(100dvh - 6px); max-width: none; padding: 0; }
-.welcome-screen .app-header { position: absolute; z-index: 2; top: 20px; right: 54px; min-height: 44px; border: 0; }
-.welcome-screen .brand, .welcome-screen .demo, .welcome-screen footer { display: none; }
+.welcome-screen .app-header { position: absolute; z-index: 2; top: 20px; right: 54px; left: 28px; min-height: 44px; border: 0; }
+.welcome-screen .demo, .welcome-screen footer { display: none; }
 .welcome-screen #home { min-height: 44px; padding: 0; gap: 5px; background: none; border: 0; border-radius: 0; box-shadow: none; color: #ff0617; font-size: 18px; font-style: italic; font-weight: 700; letter-spacing: -.3px; }
 .welcome-screen #home .icon { width: 19px; height: 19px; color: #930008; stroke-width: 3.5; }
 .welcome-screen #main { display: grid; place-items: center; padding: 0; }
@@ -65,17 +40,19 @@ body.welcome-screen {
 /* Each group includes its trailing spacing. Moving half the two-group track
    therefore lands on an identical frame at every iteration. */
 .medicine-loop { position: absolute; top: 41.7%; left: 9.4%; width: 82%; height: 31%; overflow: hidden; }
-.medicine-track { display: flex; width: max-content; margin-left: 1.2cqw; animation: medicine-flow 24s linear infinite; animation-play-state: paused; will-change: transform; }
-.medicine-track.is-ready { animation-play-state: running; }
+.medicine-track { display: flex; width: max-content; margin-left: 1.2cqw; animation: medicine-flow 18s linear infinite; will-change: transform; }
 .medicine-group { display: flex; flex: none; align-items: flex-start; gap: 2.8cqw; padding: 1.25cqw 2.8cqw 1.25cqw 0; }
 .loop-medicine { position: relative; flex: 0 0 24.5cqw; width: 24.5cqw; margin: 0; }
 .loop-medicine.cetirizine { margin-top: 1.8cqw; }
 .loop-medicine.diatabs { margin-top: 1.6cqw; }
 .loop-medicine::before { content: ""; position: absolute; inset: 0; background: #202624; opacity: .55; transform: translate(-5px, 1px) skewY(-5deg); filter: blur(1.4px); }
-.loop-medicine img { position: relative; display: block; width: 100%; max-width: none; height: auto; border: 0; border-radius: 0; user-select: none; }
+.loop-medicine img { position: relative; display: block; width: 100%; max-width: none; height: auto; border: 0; border-radius: 0; user-select: none; animation: medicine-float 4.8s ease-in-out infinite; }
+.loop-medicine.diatabs img { animation-delay: -1.6s; }
+.loop-medicine.biogesic img { animation-delay: -3.2s; }
 
-.welcome .begin-button { position: absolute; left: 37.3%; top: 78.65%; display: flex; align-items: center; justify-content: center; gap: 0; width: 21.7%; height: 7.6%; min-width: 0; min-height: 44px; padding: 0; border: 1px solid #131713; border-radius: 999px; background: #4caf50; color: white; box-shadow: none; font-family: "Inter", sans-serif; font-size: 2.1cqw; font-weight: 400; letter-spacing: -.03cqw; }
-.welcome .begin-button:hover:not(:disabled) { background: #4caf50; box-shadow: none; }
+.welcome .begin-button { position: absolute; left: 37.3%; top: 78.65%; display: flex; align-items: center; justify-content: center; gap: 0; width: 21.7%; height: 7.6%; min-width: 0; min-height: 44px; padding: 0; border: 1px solid var(--ink); border-radius: 999px; background: var(--green); color: white; box-shadow: none; font-family: "Inter", sans-serif; font-size: 2.1cqw; font-weight: 400; letter-spacing: -.03cqw; }
+.welcome .begin-button:hover:not(:disabled) { background: #4caf50; box-shadow: 0 4px 0 #1523182b, 0 0 0 5px #4caf5014; transform: translateY(-2px); }
+.welcome .begin-button:active:not(:disabled) { transform: translateY(1px) scale(.98); box-shadow: none; }
 .welcome .begin-button:focus-visible { outline: 3px solid #151a16; outline-offset: 5px; }
 
 @keyframes medicine-flow {
@@ -83,8 +60,13 @@ body.welcome-screen {
   to { transform: translate3d(-50%, 0, 0); }
 }
 
+@keyframes medicine-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
 @media (max-width: 650px) {
-  .welcome-screen .app-header { top: 15px; right: 22px; }
+  .welcome-screen .app-header { top: 15px; right: 22px; left: 20px; }
   .welcome-screen #home { font-size: 15px; }
   .welcome-screen .welcome { max-height: none; }
   .welcome .welcome-title { left: 8%; top: 23%; font-size: 10cqw; letter-spacing: -.44cqw; -webkit-text-stroke-width: 2px; }
@@ -98,5 +80,6 @@ body.welcome-screen {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .medicine-track { animation: none; transform: none; }
+  /* Keep the requested continuous carousel; reduce only its decorative bob. */
+  .loop-medicine img { animation: none; }
 }
