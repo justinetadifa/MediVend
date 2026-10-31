@@ -1,5 +1,14 @@
 MEDIVEND — DATABASE-BACKED DEMO CHECKOUT
 
+ORANGE PI DEPLOYMENT
+See docs/orange-pi-deployment.md for Apache/PHP/MariaDB, migrations, kiosk setup,
+private configuration, tested behavior and exact hardware details still needed.
+config/machine.php selects simulation or hardware from server configuration.
+Local XAMPP remains simulation. The deploy environment example selects hardware;
+without a verified configured/connected adapter it shows Machine unavailable
+and blocks purchases. No hardware adapter is enabled. Real mode uses neutral
+wording, read-only backend payment/delivery status and no simulation controls.
+
 RUN IN XAMPP
 1. Keep the project in C:\xampp\htdocs\MediVend.
 2. Start Apache and MySQL in the XAMPP Control Panel.

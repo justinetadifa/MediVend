@@ -1,0 +1,26 @@
+[Unit]
+Description=MediVend verified hardware boundary
+After=mariadb.service
+Requires=mariadb.service
+
+[Service]
+Type=simple
+User=medivend
+Group=medivend
+WorkingDirectory=/srv/medivend
+Environment=MEDIVEND_ENV_FILE=/etc/medivend/medivend.env
+ExecStart=/usr/bin/php /srv/medivend/scripts/hardware-worker.php
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=medivend
+StateDirectory=medivend
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# No device access is granted by this template. Any later device permissions
+# must be chosen from the verified adapter's actual requirements.
+
+[Install]
+WantedBy=multi-user.target

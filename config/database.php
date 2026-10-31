@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/environment.php';
 
 // Local XAMPP defaults. Optional environment overrides also support testing
 // without editing this file or changing the existing database.

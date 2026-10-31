@@ -4,15 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#4caf50">
-  <meta name="description" content="Explore the MediVend clinic catalog with current prices, availability, and a touch-friendly demo checkout.">
+  <meta name="description" content="Explore the MediVend clinic catalog with current prices, availability, and touch-friendly checkout.">
   <title>MediVend · A little everyday care</title>
   <link rel="icon" type="image/png" href="assets/MediVendWebLogo.png">
   <link rel="apple-touch-icon" href="assets/MediVendWebLogo.png">
   <link rel="stylesheet" href="assets/fonts.css">
-  <link rel="stylesheet" href="assets/style.css?v=20261031-6">
+  <link rel="stylesheet" href="assets/style.css?v=20261031-7">
   <link rel="stylesheet" href="assets/welcome.css?v=20261031-2">
-  <script src="assets/demo.js?v=20261031-6" defer></script>
-  <script src="assets/app.js?v=20261031-6" defer></script>
+  <script src="assets/demo.js?v=20261031-7" defer></script>
+  <script src="assets/hardware.js?v=20261031-7" defer></script>
+  <script src="assets/app.js?v=20261031-7" defer></script>
 </head>
 <body class="welcome-screen">
   <div class="app">
@@ -20,7 +21,7 @@
       <a class="brand" href="#" aria-label="MediVend home">
         <span class="brand-logo"><img src="assets/MediVendLogo.png" alt="MediVend" width="1366" height="768"></span>
       </a>
-      <span class="demo"><i aria-hidden="true"></i><span class="demo-full">Interactive </span>demo</span>
+      <span class="demo" hidden><i aria-hidden="true"></i><span class="demo-full">Interactive </span>demo</span>
       <button class="text-button" id="home">
         <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m9 3-7 5 7 5V9h5a5 5 0 0 1 0 10h-2v3h2a8 8 0 0 0 0-16H9V3Z"/></svg>
         <span>Start over</span>
@@ -29,7 +30,7 @@
     <main id="main"></main>
     <footer>
       <span class="footer-brand"><img src="assets/MediVendWebLogo.png" alt="" width="14" height="14"> A little everyday care.</span>
-      <span>Clinic demo · No real payment or dispensing</span>
+      <span id="mode-footer">Exact payment only. No change.</span>
     </footer>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -45,7 +46,7 @@
   <dialog id="staff-dialog" aria-labelledby="staff-title" aria-describedby="staff-description">
     <span class="dialog-icon" aria-hidden="true">!</span>
     <h2 id="staff-title">Please contact clinic staff</h2>
-    <p id="staff-description">Your order and inserted demo credit remain recorded. Keep this reference for staff assistance. No refund has been issued.</p>
+    <p id="staff-description">Your order and recorded credit remain preserved. Keep this reference for staff assistance. No refund has been issued.</p>
     <dl class="staff-details"><dt>Saved order</dt><dd id="staff-reference"></dd><dt>Last confirmed amount inserted</dt><dd id="staff-amount"></dd></dl>
     <button class="primary" id="staff-close">Keep current order</button>
   </dialog>

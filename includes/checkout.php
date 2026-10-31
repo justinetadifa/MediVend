@@ -57,6 +57,11 @@ function medivendReadOrder(PDO $database, string $reference): ?array
     if (!$row) {
         return null;
     }
+    foreach (['total_centavos','amount_paid_centavos'] as $field) {
+        $value = filter_var($row[$field], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($value === false) throw new RuntimeException('Saved amount exceeds this platform integer limit. Credit is preserved; contact clinic staff.');
+        $row[$field] = $value;
+    }
 
     $itemsStatement = $database->prepare(
         'SELECT product_id, product_name, quantity, unit_price_centavos, dispensed_quantity
@@ -88,21 +93,30 @@ function medivendReadOrder(PDO $database, string $reference): ?array
     ];
 }
 
-function medivendSaveOrder(PDO $database, array $items, string $key): array
+function medivendSaveOrder(PDO $database, array $items, string $key, bool $isDemo = true): array
 {
     $reference = medivendCheckoutReference($key);
     $database->beginTransaction();
     try {
+        if (!$isDemo) {
+            $machine = $database->query('SELECT active_transaction_id FROM hardware_machine_state WHERE id = 1 FOR UPDATE')->fetch();
+            if (!$machine) throw new RuntimeException('Hardware migration required.');
+            if ($machine['active_transaction_id'] !== null) {
+                $active = $database->prepare('SELECT reference FROM transactions WHERE id = ?');
+                $active->execute([$machine['active_transaction_id']]);
+                if ($active->fetchColumn() !== $reference) throw new MedivendCheckoutError(409, 'session_active', 'Please contact clinic staff. The previous session is still recorded.');
+            }
+        }
         // Claim the unique reference first. Concurrent retries wait on this
         // insert until the first request commits or rolls back its entire order.
         $insertOrder = $database->prepare(
             "INSERT INTO transactions
              (reference, total_centavos, amount_paid_centavos, payment_status,
               dispensing_status, order_status, is_demo)
-             VALUES (:reference, 0, 0, 'pending', 'not_started', 'pending', 1)"
+             VALUES (:reference, 0, 0, 'pending', 'not_started', 'pending', :is_demo)"
         );
         try {
-            $insertOrder->execute(['reference' => $reference]);
+            $insertOrder->execute(['reference' => $reference, 'is_demo' => $isDemo ? 1 : 0]);
         } catch (PDOException $error) {
             if ((int) ($error->errorInfo[1] ?? 0) !== 1062) {
                 throw $error;
@@ -115,7 +129,7 @@ function medivendSaveOrder(PDO $database, array $items, string $key): array
             $savedItems = array_map(static fn(array $item): array => [
                 'product_id' => $item['product_id'], 'quantity' => $item['quantity'],
             ], $existing['items']);
-            if ($savedItems !== $items) {
+            if ($savedItems !== $items || $existing['is_demo'] !== $isDemo) {
                 throw new MedivendCheckoutError(409, 'idempotency_conflict', 'This checkout request was already used for a different cart. Review your items before trying again.');
             }
             return ['order' => $existing, 'replayed' => true];
@@ -123,7 +137,7 @@ function medivendSaveOrder(PDO $database, array $items, string $key): array
 
         $orderId = $database->lastInsertId();
         $selectProduct = $database->prepare(
-            'SELECT id, name, price_centavos, stock_quantity, compartment_number, is_active
+            'SELECT id, name, price_centavos, stock_quantity, compartment_number, is_active, is_demo
              FROM products WHERE id = :product_id FOR UPDATE'
         );
         $insertItem = $database->prepare(
@@ -146,9 +160,16 @@ function medivendSaveOrder(PDO $database, array $items, string $key): array
             if ($item['quantity'] > (int) $product['stock_quantity']) {
                 throw new MedivendCheckoutError(409, 'insufficient_stock', $product['name'] . ' has only ' . (int) $product['stock_quantity'] . ' available. Your cart has been kept for editing.');
             }
-            $unitPrice = (int) $product['price_centavos'];
+            $unitPrice = filter_var($product['price_centavos'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+            if ($unitPrice === false || $unitPrice > intdiv(PHP_INT_MAX, $item['quantity'])) {
+                throw new MedivendCheckoutError(422, 'total_too_large', 'This order exceeds the platform integer limit. Please contact clinic staff.');
+            }
+            if (!$isDemo && ((int) $product['is_demo'] !== 0 || $unitPrice !== 1000)) {
+                throw new MedivendCheckoutError(409, 'inventory_not_commissioned', 'Machine unavailable. Please contact clinic staff.');
+            }
             $lineTotal = $unitPrice * $item['quantity'];
-            if ($lineTotal > 4294967295 || $total > 4294967295 - $lineTotal) {
+            $maximum = min(4294967295, PHP_INT_MAX);
+            if ($lineTotal > $maximum || $total > $maximum - $lineTotal) {
                 throw new MedivendCheckoutError(422, 'total_too_large', 'This order exceeds the supported total. Please reduce its quantities.');
             }
             $total += $lineTotal;
@@ -166,6 +187,10 @@ function medivendSaveOrder(PDO $database, array $items, string $key): array
         $updateTotal->bindValue(':total', $total, PDO::PARAM_INT);
         $updateTotal->bindValue(':id', $orderId, PDO::PARAM_STR);
         $updateTotal->execute();
+        if (!$isDemo) {
+            $lease = $database->prepare('UPDATE hardware_machine_state SET active_transaction_id = ? WHERE id = 1');
+            $lease->execute([$orderId]);
+        }
         $saved = medivendReadOrder($database, $reference);
         if (!$saved) {
             throw new RuntimeException('Saved order could not be read.');

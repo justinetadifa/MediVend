@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/checkout.php';
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/coin-events.php';
+require_once __DIR__ . '/machine.php';
 
 function medivendDemoKey(): string
 {
@@ -148,6 +149,7 @@ function medivendDemoEndpoint(string $kind): void
     $database = null;
     $view = null;
     try {
+        medivendRequireSimulation();
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         if (($kind === 'status' && $method !== 'GET') || ($kind !== 'status' && $method !== 'POST')) {
             header('Allow: ' . ($kind === 'status' ? 'GET' : 'POST'));

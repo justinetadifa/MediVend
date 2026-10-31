@@ -34,7 +34,7 @@ function medivendRecordAcceptedCoin(PDO $database, string $reference, string $ev
         $before = $order['amount_paid_centavos'];
         // Never cap/truncate money to the order total or report a failed write as
         // success. A future adapter must keep this event queued on this error.
-        if ($before > 4294967295 - $coin) throw new RuntimeException('Credit storage limit reached. Preserve accepted-coin event for staff; no credit was discarded or returned.');
+        if ($before > min(4294967295, PHP_INT_MAX) - $coin) throw new RuntimeException('Credit storage limit reached. Preserve accepted-coin event for staff; no credit was discarded or returned.');
         $after = $before + $coin;
         $review = $after > $order['total_centavos'] || $order['order_status'] !== 'pending'
             || $order['dispensing_status'] !== 'not_started' || !in_array($order['payment_status'], ['pending', 'partial'], true);

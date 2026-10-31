@@ -1,6 +1,8 @@
 # MediVend
 
-A touchscreen clinic catalog with **database-backed checkout, demo payment, and simulated dispensing**, using PHP, PDO, and the local MySQL database `medivend_db`. The existing MediVend design, product photos, fonts, and continuous welcome animation are preserved. Designed for **1024 × 600**, with responsive layouts.
+A touchscreen clinic catalog with **database-backed checkout and separate server-controlled simulation/hardware modes**, using PHP, PDO, and `medivend_db`. The MediVend design, product photos, fonts and continuous welcome animation are preserved at **1024 × 600**.
+
+For Orange Pi One setup, use [the installation and deployment guide](docs/orange-pi-deployment.md), [private environment example](deploy/medivend.env.example), and [hardware adapter contract](docs/hardware-adapter-contract.md). Local XAMPP defaults to simulation. The deployment example selects hardware mode, which shows **Machine unavailable** and blocks checkout until a real verified adapter and fresh worker heartbeat exist. No physical integration is configured or enabled. Hardware customer screens have no demo controls or wording.
 
 Saving an order creates a `transactions` row and its `transaction_items` snapshots, initially payment **pending** and dispensing **not_started**. Demo coin events are stored persistently in `demo_coin_events` and update the balance atomically. Only a newly confirmed simulated delivery changes demo-product stock. **Real payments and physical hardware are never connected.**
 
@@ -24,7 +26,7 @@ Apply the migration from PowerShell in the project folder before using coin cont
 & 'C:\xampp\php\php.exe' scripts/migrate.php
 ```
 
-The CLI-only runner uses the configured database and can be run again. It applies `database/migrations/001_demo_coin_events.sql` (adds the event ledger), `database/updates/002_prices_10_pesos.sql` (updates only the three current medicine SKUs), and `database/migrations/003_twenty_peso_coins.sql` (allows 2000-centavo events and adds their source). These SQL files can also be run in that order in phpMyAdmin with `medivend_db` selected; migration 003 targets local XAMPP MariaDB. They do not delete data or rewrite historical order totals, credits, or item price snapshots. Existing ledger rows receive source `demo`; pre-ledger credit is preserved without fabricated historical events.
+The CLI-only runner uses the configured database and can be run again. It creates missing base tables from `database/schema.sql`, then applies the event ledger, current-price update, ₱20/source migration and `004_hardware_boundaries.sql` (machine lease, motor intents and sensor receipts). These files target MariaDB/XAMPP and do not seed guessed inventory, delete data, or rewrite historical order totals, credits or item snapshots. Existing ledger rows receive source `demo`; pre-ledger credit is preserved without fabricated events.
 
 ## Catalog
 
@@ -109,9 +111,13 @@ With Apache/MySQL running, first check [the catalog JSON](http://localhost/MediV
 & 'C:\xampp\php\php.exe' tests/checkout-api.test.php
 & 'C:\xampp\php\php.exe' tests/demo-flow-api.test.php
 & 'C:\xampp\php\php.exe' tests/coin-payment-api.test.php
+& 'C:\xampp\php\php.exe' tests/hardware-mode.test.php
+& 'C:\xampp\php\php.exe' tests/migrations.test.php
 ```
 
 The catalog test is read-only. Checkout, delivery, and coin tests use XAMPP's `curl` extension and their own temporary rows. They cover server prices, snapshots, rollback, mixed coins/multiple items, persistent replay, concurrent identical/distinct events, refresh lookup, overpayment, additional coins after full payment, existing credits, and delivery faults. They remove only their own test rows. Set `MEDIVEND_TEST_BASE_URL` if Apache uses another port or project URL.
+
+Hardware tests use an isolated PHP adapter double and local HTTP server, never physical hardware. Migration tests create/drop only a uniquely named temporary database and require development database-admin permissions. Run on an idle test installation, not a commissioned kiosk with live receipts. `scripts/check-deployment.php` performs read-only configuration/schema/range checks. A 32-bit ARM system still needs target testing.
 
 The full touch-browser audit also uses real PHP/MySQL endpoints with isolated temporary products/orders. With Node.js, an available Puppeteer installation, and Chrome:
 
@@ -119,6 +125,7 @@ The full touch-browser audit also uses real PHP/MySQL endpoints with isolated te
 $env:MEDIVEND_PUPPETEER_MODULE = 'puppeteer'
 $env:MEDIVEND_CHROME_PATH = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 node tests/purchase-flow-browser.test.mjs
+node tests/hardware-browser.test.mjs
 ```
 
 The module setting can be an importable package (such as an already installed `puppeteer-core`) or a `file:///` URL to its entry point. The runner does not install dependencies or download a browser. Optional `MEDIVEND_PHP_PATH` overrides `C:/xampp/php/php.exe`. Screenshots/results are saved in the printed temporary folder. The test exercises 1024 × 600 touch input, loading/error screens, mixed coins, duplicate events, lost responses, refresh, staff guards, stock changes, and completed-session handoff. It removes only its own fixtures, then compares all original product/order/item/coin rows. Run tests on an idle local demo database; fixture inserts advance auto-increment IDs normally.

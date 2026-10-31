@@ -1,0 +1,55 @@
+-- Reconstructed from the inspected medivend_db tables. Schema only: no orders,
+-- payments, artificial inventory, or guessed physical compartment assignments.
+CREATE TABLE IF NOT EXISTS products (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    sku VARCHAR(40) NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    description VARCHAR(255) DEFAULT NULL,
+    image_path VARCHAR(255) DEFAULT NULL,
+    price_centavos INT UNSIGNED NOT NULL,
+    stock_quantity INT UNSIGNED NOT NULL DEFAULT 0,
+    compartment_number SMALLINT UNSIGNED NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    is_demo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_products_sku (sku),
+    UNIQUE KEY uq_products_compartment (compartment_number),
+    CONSTRAINT chk_products_compartment CHECK (compartment_number > 0),
+    CONSTRAINT chk_products_active CHECK (is_active IN (0,1)),
+    CONSTRAINT chk_products_demo CHECK (is_demo IN (0,1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS transactions (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    reference VARCHAR(64) NOT NULL,
+    total_centavos INT UNSIGNED NOT NULL DEFAULT 0,
+    amount_paid_centavos INT UNSIGNED NOT NULL DEFAULT 0,
+    payment_status ENUM('pending','partial','paid','refund_required','refunded','cancelled') NOT NULL DEFAULT 'pending',
+    dispensing_status ENUM('not_started','in_progress','partial','dispensed','failed','needs_review') NOT NULL DEFAULT 'not_started',
+    order_status ENUM('pending','processing','completed','cancelled','failed','needs_review') NOT NULL DEFAULT 'pending',
+    is_demo TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    completed_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uq_transactions_reference (reference),
+    KEY idx_transactions_created_at (created_at),
+    KEY idx_transactions_order_status (order_status),
+    CONSTRAINT chk_transactions_demo CHECK (is_demo IN (0,1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS transaction_items (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    transaction_id BIGINT UNSIGNED NOT NULL,
+    product_id INT UNSIGNED NOT NULL,
+    product_name VARCHAR(120) NOT NULL,
+    compartment_number SMALLINT UNSIGNED NOT NULL,
+    quantity SMALLINT UNSIGNED NOT NULL,
+    unit_price_centavos INT UNSIGNED NOT NULL,
+    dispensed_quantity SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_transaction_product (transaction_id,product_id),
+    KEY idx_transaction_items_product (product_id),
+    CONSTRAINT fk_items_product FOREIGN KEY (product_id) REFERENCES products(id),
+    CONSTRAINT fk_items_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(id),
+    CONSTRAINT chk_items_quantity CHECK (quantity > 0),
+    CONSTRAINT chk_items_compartment CHECK (compartment_number > 0),
+    CONSTRAINT chk_items_dispensed CHECK (dispensed_quantity <= quantity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

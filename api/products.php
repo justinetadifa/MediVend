@@ -17,12 +17,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 
 try {
     require_once __DIR__ . '/../includes/database.php';
+    require_once __DIR__ . '/../includes/machine.php';
+    $hardware = medivendMachineConfig()['mode'] === 'hardware';
     $database = medivendDatabase();
     $statement = $database->query(
         'SELECT id, sku, name, description, image_path,
                 price_centavos, stock_quantity, is_demo
          FROM products
-         WHERE is_active = 1
+         WHERE is_active = 1' . ($hardware ? ' AND is_demo = 0' : '') . '
          ORDER BY compartment_number ASC, id ASC'
     );
 

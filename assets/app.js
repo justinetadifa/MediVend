@@ -1,5 +1,7 @@
-/* PHP owns prices, simulated coin events, and confirmed demo delivery counts.
-   Real payments and physical hardware are never connected. */
+/* PHP owns operating mode, prices, payments, and confirmed delivery counts. */
+let machineRuntime = { loaded: false, mode: 'hardware', available: false, active_order: false };
+let appBooted = false;
+const currentFlow = () => machineRuntime.mode === 'simulation' ? DemoFlow : HardwareFlow;
 let products = [];
 let catalogStatus = 'loading';
 let catalogError = '';
@@ -60,7 +62,7 @@ function normalizeCatalog(payload) {
       description: row.description || '',
       price: row.price_centavos,
       stock: row.stock_quantity,
-      form: row.is_demo ? 'Demo item' : 'Clinic item',
+      form: machineRuntime.mode === 'simulation' && row.is_demo ? 'Demo item' : 'Clinic item',
       color: 'mint',
       ...productImages(row)
     };
@@ -119,7 +121,7 @@ function keepCheckoutAttempt() {
     image_path: product.image, price_centavos: product.price, stock_quantity: product.stock,
     is_demo: product.form === 'Demo item'
   }));
-  const attempt = { key, items, catalog };
+  const attempt = { key, items, catalog, mode: machineRuntime.mode };
   // Keep the immutable IDs, quantities and retry key before sending any request.
   // Cached catalog values are display-only and are never sent to checkout.php.
   sessionStorage.setItem(checkoutStorageKey, JSON.stringify(attempt));
@@ -161,7 +163,8 @@ function savedOrderFromResponse(payload, expectedItems) {
     || (order.amount_paid_centavos > order.total_centavos && (order.order_status !== 'needs_review' || order.dispensing_status !== 'needs_review'))
     || !['pending', 'partial', 'paid', 'cancelled'].includes(order.payment_status)
     || !['not_started', 'in_progress', 'partial', 'dispensed', 'needs_review'].includes(order.dispensing_status)
-    || !['pending', 'processing', 'completed', 'needs_review', 'cancelled'].includes(order.order_status) || order.is_demo !== true
+    || !['pending', 'processing', 'completed', 'needs_review', 'cancelled'].includes(order.order_status) || typeof order.is_demo !== 'boolean'
+    || (machineRuntime.mode === 'simulation' && order.is_demo !== true)
     || typeof payload.state_token !== 'string' || !/^[a-f0-9]{64}$/.test(payload.state_token)
     || !Array.isArray(order.items)) throw new Error('invalid_saved_order');
   const items = canonicalCheckoutItems(order.items);
@@ -186,7 +189,7 @@ function savedOrderFromResponse(payload, expectedItems) {
 }
 
 function syncCheckoutControls() {
-  const locked = checkoutBusy || checkoutUncertain || DemoFlow.locked;
+  const locked = !machineRuntime.loaded || checkoutBusy || checkoutUncertain || currentFlow().locked;
   document.querySelector('#home').disabled = locked;
   const brand = document.querySelector('.brand');
   brand.setAttribute('aria-disabled', String(locked));
@@ -195,7 +198,7 @@ function syncCheckoutControls() {
 }
 
 async function saveOrder() {
-  if (checkoutBusy || screen !== 'checkout' || !quantity()) return;
+  if (!machineRuntime.available || checkoutBusy || screen !== 'checkout' || !quantity()) return;
   if (!checkoutAttempt && (!checkoutAcknowledged || catalogStatus !== 'ready')) return;
   if (!checkoutAttempt) {
     try { checkoutAttempt = keepCheckoutAttempt(); }
@@ -229,7 +232,7 @@ async function saveOrder() {
       throw new Error('checkout_not_confirmed');
     }
     lastOrder = savedOrderFromResponse(payload, attempt.items);
-    DemoFlow.attach(attempt.key);
+    currentFlow().attach(attempt.key);
     forgetCheckoutAttempt();
     checkoutUncertain = false;
     checkoutAcknowledged = false;
@@ -307,8 +310,8 @@ function announce(message) {
 }
 
 function go(next) {
-  if (DemoFlow.protectsCredit && next !== 'pending') { DemoFlow.guardReset(); return; }
-  if ((checkoutBusy || checkoutUncertain || DemoFlow.locked) && next !== 'pending') return;
+  if (currentFlow().protectsCredit && next !== 'pending') { currentFlow().guardReset(); return; }
+  if ((!machineRuntime.available || checkoutBusy || checkoutUncertain || currentFlow().locked) && next !== 'pending') return;
   if (next === 'checkout' && !checkoutAttempt) {
     checkoutAcknowledged = false;
     checkoutError = '';
@@ -336,11 +339,11 @@ function welcome() {
   const medicineGroup = duplicate => `<div class="medicine-group"${duplicate ? ' aria-hidden="true" inert' : ''}>${welcomeArtwork.map(artwork => `<figure class="loop-medicine ${artwork.className}"><img src="${artwork.image}" data-fallback="${placeholderImage}" alt="" draggable="false"></figure>`).join('')}</div>`;
   return `<section class="welcome" aria-labelledby="welcome-title">
     <h1 id="welcome-title" class="welcome-title"><span>A LITTLE CARE.</span><span>A BETTER DAY.</span></h1>
-    <p class="welcome-description"><span>Your clinic essentials, all in one place.</span><span>Choose your items. We'll keep it simple.</span></p>
+    <p class="welcome-description"><span>Your clinic essentials, all in one place.</span><span>${machineRuntime.available && !machineRuntime.active_order ? "Choose your items. We'll keep it simple." : 'Please contact clinic staff. Exact payment only. No change.'}</span></p>
     <div class="medicine-loop" role="img" aria-label="Cetirizine, Diatabs, and Biogesic medicine packaging">
       <div class="medicine-track">${medicineGroup(false)}${medicineGroup(true)}</div>
     </div>
-    <button class="primary begin-button" data-action="begin">Get Started</button>
+    <button class="primary begin-button" data-action="begin" ${!machineRuntime.available || machineRuntime.active_order ? 'disabled' : ''}>${!machineRuntime.available ? 'Machine unavailable' : machineRuntime.active_order ? 'Staff assistance needed' : 'Get Started'}</button>
   </section>`;
 }
 
@@ -371,7 +374,7 @@ function cartMarkup() {
     </div>`).join('') : `<div class="empty"><span class="empty-icon">${icon('bag')}<span>+</span></span><h3>A little empty here.</h3><p>Add something from the collection<br>to get started.</p></div>`}</div>
     <div class="cart-bottom"><div class="total"><div><span>Total</span><small>${count} item${count === 1 ? '' : 's'} in your cart</small></div><strong>${money(total())}</strong></div>
     <button class="primary checkout-button" data-action="checkout" ${!count || catalogStatus !== 'ready' ? 'disabled' : ''}>Review order ${icon('arrow')}</button>
-    <p class="cart-note">${icon('shield')} Demo only. No real payment.</p></div>
+    <p class="cart-note">${icon('shield')} ${machineRuntime.mode === 'simulation' ? 'Demo only. No real payment.' : 'Exact payment only. No change.'}</p></div>
   </aside>`;
 }
 
@@ -396,7 +399,7 @@ function shop() {
   return `<section class="shop">
     <div class="page-head"><div><p class="eyebrow"><span></span> The clinic collection</p><h1>A little care starts here.</h1><p class="sub">Choose from the clinic’s available medicines.</p></div>${steps(1)}</div>
     <div class="collection-bar"><div><span class="collection-dot"></span><span>All medicines</span><small>${catalogStatus === 'loading' ? '…' : String(catalogStatus === 'ready' ? products.length : 0).padStart(2, '0')}</small></div><span class="collection-price">${catalogPriceLabel()}</span></div>
-    <div class="shop-layout"><div class="catalog"><div class="products" aria-busy="${catalogStatus === 'loading'}">${catalogStatus === 'ready' ? products.map(productCard).join('') : catalogStateMarkup()}</div><p class="catalog-note">${icon('shield')} Choose medicines with clinic staff guidance. Demo orders do not reserve stock.</p></div>${cartMarkup()}</div>
+    <div class="shop-layout"><div class="catalog"><div class="products" aria-busy="${catalogStatus === 'loading'}">${catalogStatus === 'ready' ? products.map(productCard).join('') : catalogStateMarkup()}</div><p class="catalog-note">${icon('shield')} Choose medicines with clinic staff guidance. ${machineRuntime.mode === 'simulation' ? 'Demo orders do not reserve stock.' : 'Availability is confirmed before dispensing.'}</p></div>${cartMarkup()}</div>
   </section>`;
 }
 
@@ -409,8 +412,8 @@ function checkout() {
   return `<section class="checkout"><button class="back" data-action="shop" ${locked ? 'disabled' : ''}>${icon('back')} Back to collection</button>
     <div class="page-head"><div><p class="eyebrow">Almost there</p><h1>One last look.</h1><p class="sub">Review your items before saving your order.</p></div>${steps(2)}</div>
     <div class="checkout-grid"><div class="panel order-panel"><div class="panel-heading"><h2>Your selection</h2><span class="count">${quantity()} item${quantity() === 1 ? '' : 's'}</span></div>${products.filter(product => cart.has(product.id)).map(product => summaryLine(product, cart.get(product.id))).join('')}<div class="total"><span>Estimated total</span><strong>${money(total())}</strong></div><p class="notice">Final prices are confirmed when your order is saved.</p></div>
-    <div class="panel checkout-panel ${checkoutError ? 'has-error' : ''}" aria-busy="${checkoutBusy}"><span class="panel-icon">${icon('shield')}</span><h2>Save a demo order.</h2><p class="sub">Test payment and delivery with simulation controls. No real coins or hardware are connected.</p>
-    ${checkoutAttempt ? '' : `<label class="check-label"><input id="ack" type="checkbox" ${checkoutAcknowledged ? 'checked' : ''}><span>I understand this is a simulation. Confirmed demo delivery changes database stock only.</span></label>`}
+    <div class="panel checkout-panel ${checkoutError ? 'has-error' : ''}" aria-busy="${checkoutBusy}"><span class="panel-icon">${icon('shield')}</span><h2>${machineRuntime.mode === 'simulation' ? 'Save a demo order.' : 'Confirm your order.'}</h2><p class="sub">${machineRuntime.mode === 'simulation' ? 'Test payment and delivery with simulation controls. No real coins or hardware are connected.' : 'Accepted coins: ₱1 · ₱5 · ₱10 · ₱20. Exact payment only. No change.'}</p>
+    ${checkoutAttempt ? '' : `<label class="check-label"><input id="ack" type="checkbox" ${checkoutAcknowledged ? 'checked' : ''}><span>${machineRuntime.mode === 'simulation' ? 'I understand this is a simulation. Confirmed demo delivery changes database stock only.' : 'I have reviewed my items and understand that no change can be returned.'}</span></label>`}
     ${checkoutError ? `<p class="checkout-error" role="alert">${escapeHtml(checkoutError)}</p>` : ''}
     <button id="complete" class="primary" data-action="complete" ${checkoutBusy || (!checkoutAttempt && (!checkoutAcknowledged || catalogStatus !== 'ready')) ? 'disabled' : ''}>${checkoutBusy ? '<span class="button-spinner" aria-hidden="true"></span>Saving order…' : checkoutAttempt ? `Retry save ${icon('arrow')}` : `Save order ${icon('arrow')}`}</button>
     <p class="cart-note">${checkoutAttempt ? 'Retrying checks the same order, without creating a second one.' : 'You can go back and edit your items before saving.'}</p></div></div>
@@ -418,12 +421,13 @@ function checkout() {
 }
 
 function paymentPending() {
-  return DemoFlow.markup();
+  return currentFlow().markup();
 }
 
 function render(entering = false) {
-  document.body.classList.toggle('welcome-screen', screen === 'welcome');
-  main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : paymentPending();
+  const unavailable = !machineRuntime.available && screen !== 'pending';
+  document.body.classList.toggle('welcome-screen', screen === 'welcome' || unavailable);
+  main.innerHTML = !machineRuntime.loaded ? '<div class="catalog-state" role="status"><h1>Checking machine…</h1></div>' : unavailable ? welcome() : screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : paymentPending();
   syncCheckoutControls();
   if (entering && screen !== 'welcome') {
     main.firstElementChild.classList.add('screen-enter');
@@ -447,9 +451,11 @@ main.addEventListener('click', event => {
   const action = button.dataset.action;
   const product = products.find(item => item.id === button.dataset.id);
 
-  if (action.startsWith('demo-')) { DemoFlow.action(button); return; }
+  if (action.startsWith('hardware-') && machineRuntime.mode === 'hardware') { HardwareFlow.action(button); return; }
+  if (action.startsWith('demo-') && machineRuntime.mode === 'simulation') { DemoFlow.action(button); return; }
+  if (!machineRuntime.loaded || !machineRuntime.available) return;
 
-  if ((checkoutBusy || checkoutUncertain || DemoFlow.locked) && action !== 'complete') return;
+  if ((checkoutBusy || checkoutUncertain || currentFlow().locked) && action !== 'complete') return;
 
   if (action === 'begin' || action === 'shop') go('shop');
   if (action === 'retry') loadCatalog();
@@ -483,18 +489,18 @@ main.addEventListener('change', event => {
 });
 
 function requestReset() {
-  if (DemoFlow.guardReset()) return;
-  if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
+  if (currentFlow().guardReset()) return;
+  if (!machineRuntime.available || checkoutBusy || checkoutUncertain || currentFlow().locked) return;
   if (quantity()) document.querySelector('#reset-dialog').showModal();
   else resetSession();
 }
 
 function resetSession() {
-  if (DemoFlow.guardReset()) return;
-  if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
+  if (currentFlow().guardReset()) return;
+  if (!machineRuntime.available || checkoutBusy || checkoutUncertain || currentFlow().locked) return;
   document.querySelector('#reset-dialog').close();
   forgetCheckoutAttempt();
-  DemoFlow.clear();
+  currentFlow().clear();
   checkoutAcknowledged = false;
   checkoutError = '';
   cart.clear();
@@ -536,8 +542,35 @@ document.addEventListener('pointerdown', event => {
   button.append(ripple);
 });
 
-restoreCheckoutAttempt();
-const resumeDemoOrder = !checkoutAttempt && DemoFlow.restore();
+async function loadMachine() {
+  const wasBooted = appBooted, wasAvailable = machineRuntime.available;
+  const previous = JSON.stringify([machineRuntime.loaded, machineRuntime.mode, machineRuntime.available, machineRuntime.active_order]);
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('api/machine.php', { cache: 'no-store', signal: controller.signal });
+    const value = await response.json();
+    if (!response.ok || !['simulation', 'hardware'].includes(value.mode) || typeof value.available !== 'boolean') throw new Error('invalid_machine');
+    if (appBooted && value.mode !== machineRuntime.mode) { location.reload(); return; }
+    machineRuntime = { ...value, loaded: true };
+  } catch { machineRuntime = { ...machineRuntime, loaded: true, available: false }; }
+  finally { clearTimeout(timeout); }
+  const simulation = machineRuntime.mode === 'simulation';
+  document.body.classList.toggle('hardware-mode', !simulation);
+  document.querySelector('.demo').hidden = !simulation;
+  document.querySelector('#mode-footer').textContent = simulation ? 'Clinic demo · No real payment or dispensing' : 'Exact payment only. No change.';
+  document.querySelector('#staff-description').textContent = 'Your order and recorded credit are preserved. Keep this reference for staff assistance. No refund has been issued.';
+  if (!appBooted) {
+    appBooted = true;
+    let pendingMode = null;
+    try { pendingMode = JSON.parse(sessionStorage.getItem(checkoutStorageKey))?.mode; } catch {}
+    if (simulation || pendingMode === 'hardware') restoreCheckoutAttempt();
+    const resume = !checkoutAttempt && currentFlow().restore();
+    if (resume) currentFlow().refresh();
+    else if (!checkoutAttempt && machineRuntime.available) loadCatalog();
+  }
+  if (wasBooted && !wasAvailable && machineRuntime.available && !checkoutAttempt && screen !== 'pending') loadCatalog();
+  if (!wasBooted || previous !== JSON.stringify([machineRuntime.loaded, machineRuntime.mode, machineRuntime.available, machineRuntime.active_order])) render();
+}
 render();
-if (resumeDemoOrder) DemoFlow.refresh();
-else if (!checkoutAttempt) loadCatalog();
+loadMachine();
+setInterval(loadMachine, 5000);

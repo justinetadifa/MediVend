@@ -10,11 +10,13 @@ header('X-Content-Type-Options: nosniff');
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     header('Allow: POST');
     http_response_code(405);
-    echo json_encode(['error' => ['code' => 'method_not_allowed', 'message' => 'Use POST to save a demo order.']]);
+    echo json_encode(['error' => ['code' => 'method_not_allowed', 'message' => 'Use POST to save an order.']]);
     exit;
 }
 
 try {
+    $hardware = medivendMachineConfig()['mode'] === 'hardware';
+    if ($hardware) medivendRequireHardwareReady();
     $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
     if ($contentType !== 'application/json') {
         throw new MedivendCheckoutError(415, 'json_required', 'Send the order as JSON.');
@@ -34,7 +36,7 @@ try {
     }
     $items = medivendCheckoutItems($payload);
     require_once __DIR__ . '/../includes/database.php';
-    $result = medivendSaveOrder(medivendDatabase(), $items, $key);
+    $result = medivendSaveOrder(medivendDatabase(), $items, $key, !$hardware);
     $result += medivendDemoView($result['order'], $key);
     http_response_code($result['replayed'] ? 200 : 201);
     echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);

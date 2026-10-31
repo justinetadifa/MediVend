@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=MediVend kiosk
+Exec=chromium --kiosk --no-first-run --user-data-dir=/home/medivend-kiosk/.config/medivend-browser http://localhost/
+Terminal=false

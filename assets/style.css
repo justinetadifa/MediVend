@@ -223,6 +223,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 22px
 .staff-details dd { margin: 5px 0 0; color: var(--brand-dark); font-size: 13px; overflow-wrap: anywhere; }
 #staff-reference { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 #staff-close { width: 100%; }
+[hidden], .hardware-mode .demo { display: none !important; }
 .demo-coins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .demo-coin { min-height: 58px; padding: 9px 7px; font-size: 12px; background: #eaf5e3; }
 .demo-coins button:disabled, .demo-controls button:disabled { opacity: .4; box-shadow: none; }
