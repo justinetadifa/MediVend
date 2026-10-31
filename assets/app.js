@@ -158,9 +158,9 @@ function savedOrderFromResponse(payload, expectedItems) {
   if (!order || typeof order.reference !== 'string' || !/^MV-[A-F0-9]{32}$/.test(order.reference)
     || !Number.isSafeInteger(order.total_centavos) || order.total_centavos < 0 || order.total_centavos > 4294967295
     || !Number.isSafeInteger(order.amount_paid_centavos) || order.amount_paid_centavos < 0 || order.amount_paid_centavos > order.total_centavos
-    || !['pending', 'partial', 'paid'].includes(order.payment_status)
+    || !['pending', 'partial', 'paid', 'cancelled'].includes(order.payment_status)
     || !['not_started', 'in_progress', 'partial', 'dispensed', 'needs_review'].includes(order.dispensing_status)
-    || !['pending', 'processing', 'completed', 'needs_review'].includes(order.order_status) || order.is_demo !== true
+    || !['pending', 'processing', 'completed', 'needs_review', 'cancelled'].includes(order.order_status) || order.is_demo !== true
     || typeof payload.state_token !== 'string' || !/^[a-f0-9]{64}$/.test(payload.state_token)
     || !Array.isArray(order.items)) throw new Error('invalid_saved_order');
   const items = canonicalCheckoutItems(order.items);

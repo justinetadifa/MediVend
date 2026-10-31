@@ -65,9 +65,11 @@ The browser saves the retry key, immutable IDs/quantities, and display-only cart
 
 A validation failure preserves the cart and allows editing. A network failure or timeout may happen after the database committed, so the browser keeps the original request and offers **Retry save**. Editing and starting over are temporarily disabled until that request is resolved. Reloading the same tab restores this unconfirmed cart and key. Retrying checks or saves the same order rather than creating another one.
 
-The cart clears only after a valid saved-order response. The demo screen uses the server's saved reference, prices, total, balance, and delivery counts. Once any demo credit is recorded, Start over and the home logo cannot discard an unfinished order. They open **Staff assistance**, showing its reference and last confirmed inserted amount. The bottom action also becomes Staff assistance. No refund is claimed. A new session is allowed after the simulated order is fully delivered, or before any credit/event exists.
+The cart clears only after a valid saved-order response. The demo screen uses the server's saved reference, prices, total, balance, and delivery counts. Once any demo credit is recorded, Start over and the home logo cannot discard an unfinished order. They open **Staff assistance**, showing its reference and last confirmed inserted amount. The bottom action also becomes Staff assistance. No refund is claimed. After every ordered unit is confirmed, **Finish session** clears the cart, order capability, checkout retry key, and recovery marker before returning to the welcome screen for the next customer. There is no automatic timeout that discards an unresolved session.
 
-The current order and any unconfirmed coin ID are saved before sending a coin. Protected credit also has a local-storage recovery marker, so closing/reopening the tab on the same browser restores the saved order. If it cannot continue, keep its reference and contact clinic staff; this stage has no refund or cancellation endpoint.
+The current order and any unconfirmed coin ID are saved before sending a coin. Protected credit also has a local-storage recovery marker, so closing/reopening the tab on the same browser restores the saved order. If it cannot continue, keep its reference and contact clinic staff; this stage has no refund or cancellation action for credited orders.
+
+Before leaving a saved **unpaid** order, the browser posts `{}` to `api/demo-session.php` with its `X-Demo-Order-Key`. Under the same order-row lock as coin events, PHP closes only a pending, zero-credit, not-started order by setting payment/order status to `cancelled`. The order and snapshots remain in the database. Repeating the close is safe. A concurrent coin either commits first and prevents closing, or is rejected after the unpaid order closes. Any credit or unresolved dispensing returns `409 session_protected`; the browser retains the session and shows staff assistance. No schema change is needed.
 
 ## Demo payment and dispensing
 
@@ -94,7 +96,7 @@ Overpayment errors explain the smaller supported **simulated** denominations tha
 
 Delivery responses still use a `state_token` tied to the saved order/counters; stale delivery tokens return **409 stale_event** without consuming another unit. Coin payments instead use the persistent event ledger above, so safe coin retries do not depend on an old balance token.
 
-Coin controls disable while a request or unresolved coin is pending. **Retry same demo coin event** resends exactly the persisted ID/denomination. **Refresh status** uses `X-Demo-Event-ID` to look up that event without resending it: accepted/rejected outcomes are recovered from the ledger; if absent, the same event can be retried explicitly. Only PHP-confirmed state updates the amounts. The order/credit cannot be reset during uncertain results. Delivery events are never automatically resent; an uncertain incomplete delivery still stops for staff and can be flagged with **Simulate no sensor confirmation**.
+Coin controls disable while a request or unresolved coin is pending. **Retry same demo coin event** resends exactly the persisted ID/denomination. **Refresh status** uses `X-Demo-Event-ID` to look up that event without resending it: accepted/rejected outcomes are recovered from the ledger; if absent, the same event can be retried explicitly. Only PHP-confirmed state updates the amounts. The order/credit cannot be reset during uncertain results. Delivery confirmations are never automatically resent. After an uncertain delivery request, Refresh status (including reload recovery) first reads the saved counters. If the order is still incomplete, it posts `no_confirmation` with the fresh state token to stop the simulation as `needs_review`. It preserves confirmed units and credit. A fully confirmed completed order remains completed. If stopping cannot be confirmed, the error remains visible and no successful stop is claimed.
 
 ## Test through XAMPP
 
@@ -108,6 +110,18 @@ With Apache/MySQL running, first check [the catalog JSON](http://localhost/MediV
 ```
 
 The catalog test is read-only. Checkout, delivery, and coin tests use XAMPP's `curl` extension and their own temporary rows. They cover server prices, snapshots, rollback, mixed coins/multiple items, persistent replay, concurrent identical/distinct events, refresh lookup, overpayment, additional coins after full payment, existing credits, and delivery faults. They remove only their own test rows. Set `MEDIVEND_TEST_BASE_URL` if Apache uses another port or project URL.
+
+The full touch-browser audit also uses real PHP/MySQL endpoints with isolated temporary products/orders. With Node.js, an available Puppeteer installation, and Chrome:
+
+```powershell
+$env:MEDIVEND_PUPPETEER_MODULE = 'puppeteer'
+$env:MEDIVEND_CHROME_PATH = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+node tests/purchase-flow-browser.test.mjs
+```
+
+The module setting can be an importable package (such as an already installed `puppeteer-core`) or a `file:///` URL to its entry point. The runner does not install dependencies or download a browser. Optional `MEDIVEND_PHP_PATH` overrides `C:/xampp/php/php.exe`. Screenshots/results are saved in the printed temporary folder. The test exercises 1024 × 600 touch input, loading/error screens, mixed coins, duplicate events, lost responses, refresh, staff guards, stock changes, and completed-session handoff. It removes only its own fixtures, then compares all original product/order/item/coin rows. Run tests on an idle local demo database; fixture inserts advance auto-increment IDs normally.
+
+See [the purchase-flow audit](docs/purchase-flow-audit.md) for verified results, fixes, and the remaining physical-screen/manual checks. Keep real hardware disconnected.
 
 For a manual browser check:
 
@@ -147,10 +161,11 @@ FROM demo_coin_events ORDER BY id DESC;
 - `database/migrations/001_demo_coin_events.sql`: additive ledger migration.
 - `database/updates/002_prices_10_pesos.sql`: non-destructive current-price update; historical orders are not repriced.
 - `scripts/migrate.php`: re-runnable CLI migration runner.
-- `api/demo-order.php`, `api/demo-payment.php`, `api/demo-dispense.php`: current demo-order status and simulation endpoints.
+- `api/demo-order.php`, `api/demo-payment.php`, `api/demo-dispense.php`, `api/demo-session.php`: current demo-order status, simulation, and atomic unpaid-session close endpoints.
 - `assets/app.js`: catalog/cart, checkout, safe request persistence, and shared rendering.
 - `assets/demo.js`: demo coins, per-unit delivery/fault controls, current-order restoration, and uncertain-result handling.
 - `assets/style.css`, `assets/welcome.css`, `assets/fonts.css`: shared interface and animations.
 - `tests/products-api.test.php`, `tests/checkout-api.test.php`, `tests/demo-flow-api.test.php`, `tests/coin-payment-api.test.php`: XAMPP regression checks.
+- `tests/purchase-flow-browser.test.mjs`, `tests/purchase-flow-fixtures.php`: touch-browser audit and CLI-only isolated database fixtures.
 
 A saved order is not proof of real payment or delivery. Confirmed simulated delivery changes **demo database stock** only. No real coins, money, motors, sensors, or dispensing hardware are connected.

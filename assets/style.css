@@ -347,8 +347,8 @@ dialog p { font-size: 13px; line-height: 1.7; color: #86958b; margin: 12px 0 25p
   .empty-icon > .icon { height: 25px; width: 25px; }
   .catalog-note { margin-top: 14px; font-size: 8px; }
   footer { padding: 10px 0; }
-  .checkout .back { margin-bottom: 6px; min-height: 34px; }
-  .checkout .page-head { margin-bottom: 18px; }
+  .checkout .back { margin-bottom: 2px; min-height: 44px; }
+  .checkout .page-head { margin-bottom: 12px; }
   .panel { padding: 21px; }
   .summary-line { padding: 10px 0; }
   .order-panel .summary-line { padding: 8px 0; }

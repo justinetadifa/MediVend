@@ -13,7 +13,7 @@ function coinRequestHandle(string $path, string $key, ?array $body = null, ?stri
     if ($lookup !== null) $headers[] = 'X-Demo-Event-ID: ' . $lookup;
     $handle = curl_init($url);
     curl_setopt_array($handle, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_HTTPHEADER => $headers]);
-    if ($body !== null) { curl_setopt($handle, CURLOPT_POST, true); curl_setopt($handle, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR)); }
+    if ($body !== null) { curl_setopt($handle, CURLOPT_POST, true); curl_setopt($handle, CURLOPT_POSTFIELDS, $body === [] ? '{}' : json_encode($body, JSON_THROW_ON_ERROR)); }
     return $handle;
 }
 function coinResponse($handle): array
@@ -30,6 +30,21 @@ function coinParallel(string $key, array $events): array
 {
     $multi = curl_multi_init(); $handles = [];
     foreach ($events as $event) { $handle = coinRequestHandle('demo-payment', $key, $event); $handles[] = $handle; curl_multi_add_handle($multi, $handle); }
+    do { curl_multi_exec($multi, $running); if ($running) curl_multi_select($multi, .2); } while ($running);
+    $results = [];
+    foreach ($handles as $handle) {
+        $results[] = ['status' => curl_getinfo($handle, CURLINFO_HTTP_CODE), 'body' => json_decode(curl_multi_getcontent($handle), true, 512, JSON_THROW_ON_ERROR)];
+        curl_multi_remove_handle($multi, $handle); curl_close($handle);
+    }
+    curl_multi_close($multi); return $results;
+}
+
+function raceCloseAndCoin(string $key): array
+{
+    $handles = [coinRequestHandle('demo-session', $key, []), coinRequestHandle('demo-payment', $key,
+        ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 100])];
+    $multi = curl_multi_init();
+    foreach ($handles as $handle) curl_multi_add_handle($multi, $handle);
     do { curl_multi_exec($multi, $running); if ($running) curl_multi_select($multi, .2); } while ($running);
     $results = [];
     foreach ($handles as $handle) {
@@ -130,7 +145,30 @@ try {
             coinAssert((int) $row['amount_after_centavos'] - (int) $row['amount_before_centavos'] === ($row['outcome'] === 'accepted' ? (int) $row['coin_centavos'] : 0), 'Every ledger row records an exact integer transition.');
         }
     }
-    echo 'PASS: mixed coins, multiple items, durable replay, concurrent duplicates/distinct events, refresh lookup, no change, complete-payment rejection and legacy credit.' . PHP_EOL;
+    coinAssert(coinResponse(coinRequestHandle('demo-session', $key, []))['status'] === 409, 'Reset cannot cancel a fully paid order.');
+    coinAssert(coinResponse(coinRequestHandle('demo-session', $overKey, []))['status'] === 409, 'Reset cannot clear partial credit.');
+    [$closeKey] = $make();
+    $closed = coinResponse(coinRequestHandle('demo-session', $closeKey, []));
+    coinAssert($closed['status'] === 200 && $closed['body']['order']['order_status'] === 'cancelled'
+        && $closed['body']['order']['amount_paid_centavos'] === 0, 'Only an unpaid saved session can close.');
+    coinAssert(coinResponse(coinRequestHandle('demo-session', $closeKey, []))['status'] === 200, 'Closing an unpaid session is idempotent.');
+    coinAssert(coinSend($closeKey, 100)['status'] === 409, 'A closed unpaid session cannot receive later credit.');
+    for ($attempt = 0; $attempt < 6; $attempt++) {
+        [$closeRaceKey] = $make();
+        [$closeRace, $coinRace] = raceCloseAndCoin($closeRaceKey);
+        coinAssert([$closeRace['status'], $coinRace['status']] === [200, 409]
+            || [$closeRace['status'], $coinRace['status']] === [409, 200], 'Reset and payment cannot both succeed in a race.');
+        $status = coinResponse(coinRequestHandle('demo-order', $closeRaceKey))['body']['order'];
+        coinAssert(($status['order_status'] === 'cancelled' && $status['amount_paid_centavos'] === 0)
+            || ($status['order_status'] === 'pending' && $status['amount_paid_centavos'] === 100), 'A concurrent coin is either preserved or not accepted.');
+    }
+    [$processingKey, $processingOrder] = $make();
+    $processingPayment = coinSend($processingKey, 1000);
+    $start = coinResponse(coinRequestHandle('demo-dispense', $processingKey,
+        ['state_token' => $processingPayment['body']['state_token'], 'action' => 'start', 'product_id' => null]));
+    coinAssert($start['body']['order']['order_status'] === 'processing', 'Fixture enters unresolved dispensing.');
+    coinAssert(coinResponse(coinRequestHandle('demo-session', $processingKey, []))['status'] === 409, 'Reset cannot interrupt unresolved dispensing.');
+    echo 'PASS: mixed coins, multiple items, durable replay, concurrent events, refresh, no change, payment completion, legacy credit, and atomic session/credit protection.' . PHP_EOL;
 } catch (Throwable $error) { $failed = true; fwrite(STDERR, 'FAIL: ' . $error->getMessage() . PHP_EOL); }
 finally {
     if ($database->inTransaction()) $database->rollBack(); $database->beginTransaction();

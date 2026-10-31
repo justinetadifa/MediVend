@@ -68,6 +68,21 @@ function medivendDemoReview(PDO $database, array $order): void
     $update->execute([$order['id']]);
 }
 
+function medivendCloseUnpaidSession(PDO $database, array $order): void
+{
+    // The caller holds the same order-row lock used by coin events. Either
+    // payment wins and closing is denied, or this unpaid session closes before
+    // any later coin can be accepted. Never cancel or clear recorded credit.
+    if ($order['amount_paid_centavos'] === 0 && $order['order_status'] === 'cancelled'
+        && $order['payment_status'] === 'cancelled' && $order['dispensing_status'] === 'not_started') return;
+    if ($order['amount_paid_centavos'] !== 0 || $order['payment_status'] !== 'pending'
+        || $order['order_status'] !== 'pending' || $order['dispensing_status'] !== 'not_started') {
+        throw new MedivendCheckoutError(409, 'session_protected', 'This order cannot be cleared. Its credit and delivery records are preserved. Please contact clinic staff. No refund has been issued.');
+    }
+    $close = $database->prepare("UPDATE transactions SET payment_status = 'cancelled', order_status = 'cancelled' WHERE id = ? AND amount_paid_centavos = 0");
+    $close->execute([$order['id']]);
+}
+
 function medivendDemoDispense(PDO $database, array $order, string $action, ?int $productId): void
 {
     if ($order['payment_status'] !== 'paid' || $order['amount_paid_centavos'] !== $order['total_centavos']) {
@@ -151,6 +166,8 @@ function medivendDemoEndpoint(string $kind): void
                 || ($body->action === 'delivered' ? !is_int($body->product_id) || $body->product_id < 1 : $body->product_id !== null)) {
                 throw new MedivendCheckoutError(422, 'invalid_event', 'Choose a valid dispensing simulation outcome.');
             }
+        } elseif ($kind === 'session') {
+            $body = medivendDemoBody([]);
         }
         $database = medivendDatabase();
         $database->beginTransaction();
@@ -159,6 +176,7 @@ function medivendDemoEndpoint(string $kind): void
         $coinEvent = null;
         if ($body !== null) {
             if ($kind === 'payment') $coinEvent = medivendProcessCoinEvent($database, $order, $body->event_id, $body->coin_centavos);
+            elseif ($kind === 'session') medivendCloseUnpaidSession($database, $order);
             else {
                 medivendDemoToken($order, $key, $body->state_token);
                 medivendDemoDispense($database, $order, $body->action, $body->product_id);
