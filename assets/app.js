@@ -306,6 +306,7 @@ function announce(message) {
 }
 
 function go(next) {
+  if (DemoFlow.protectsCredit && next !== 'pending') { DemoFlow.guardReset(); return; }
   if ((checkoutBusy || checkoutUncertain || DemoFlow.locked) && next !== 'pending') return;
   if (next === 'checkout' && !checkoutAttempt) {
     checkoutAcknowledged = false;
@@ -481,12 +482,14 @@ main.addEventListener('change', event => {
 });
 
 function requestReset() {
+  if (DemoFlow.guardReset()) return;
   if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
   if (quantity()) document.querySelector('#reset-dialog').showModal();
   else resetSession();
 }
 
 function resetSession() {
+  if (DemoFlow.guardReset()) return;
   if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
   document.querySelector('#reset-dialog').close();
   forgetCheckoutAttempt();
@@ -506,6 +509,7 @@ document.querySelector('.brand').addEventListener('click', event => {
 });
 document.querySelector('#keep').addEventListener('click', () => document.querySelector('#reset-dialog').close());
 document.querySelector('#reset').addEventListener('click', resetSession);
+document.querySelector('#staff-close').addEventListener('click', () => document.querySelector('#staff-dialog').close());
 
 // Broken image_path values fall back once, including cart and review thumbnails.
 main.addEventListener('error', event => {

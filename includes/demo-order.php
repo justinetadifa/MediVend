@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/checkout.php';
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/coin-events.php';
 
 function medivendDemoKey(): string
 {
@@ -17,9 +18,15 @@ function medivendDemoView(array $order, string $key): array
 {
     // The token is a compare-and-swap event guard, tied to every persisted
     // balance/status/delivery counter. Once an event changes a row, its token
-    // cannot be reused, even after PHP or the browser restarts. No event table
-    // or schema change is required. The order key is a private capability.
-    return ['order' => $order, 'state_token' => hash_hmac('sha256', json_encode($order, JSON_THROW_ON_ERROR), $key)];
+    // cannot be reused. Delivery uses this guard; payment has a persistent
+    // unique-event ledger so the same coin can be retried safely.
+    $remaining = max(0, $order['total_centavos'] - $order['amount_paid_centavos']);
+    $accepting = $order['is_demo'] && $order['order_status'] === 'pending'
+        && $order['dispensing_status'] === 'not_started' && in_array($order['payment_status'], ['pending', 'partial'], true);
+    return ['order' => $order, 'state_token' => hash_hmac('sha256', json_encode($order, JSON_THROW_ON_ERROR), $key),
+        'accepted_denominations_centavos' => [100, 500, 1000],
+        'usable_denominations_centavos' => $accepting ? array_values(array_filter([100, 500, 1000], static fn(int $coin): bool => $coin <= $remaining)) : [],
+        'exact_payment_message' => 'Exact payment only. No change.'];
 }
 
 function medivendDemoLock(PDO $database, string $key): array
@@ -53,19 +60,6 @@ function medivendDemoToken(array $order, string $key, $token): void
     if (!is_string($token) || !hash_equals(medivendDemoView($order, $key)['state_token'], $token)) {
         throw new MedivendCheckoutError(409, 'stale_event', 'This event was already handled or the order changed. Refresh status before another simulation.');
     }
-}
-
-function medivendDemoCoin(PDO $database, array $order, int $coin): void
-{
-    if (!in_array($coin, [100, 500, 1000], true)) throw new MedivendCheckoutError(422, 'invalid_coin', 'Only demo ₱1, ₱5, and ₱10 coins are supported.');
-    if ($order['order_status'] !== 'pending' || $order['dispensing_status'] !== 'not_started'
-        || !in_array($order['payment_status'], ['pending', 'partial'], true)) {
-        throw new MedivendCheckoutError(409, 'payment_closed', 'This order is not accepting demo coin events.');
-    }
-    $paid = $order['amount_paid_centavos'] + $coin;
-    if ($paid > $order['total_centavos']) throw new MedivendCheckoutError(409, 'no_change', 'That coin exceeds the remaining balance. This demo does not provide change.');
-    $update = $database->prepare('UPDATE transactions SET amount_paid_centavos = ?, payment_status = ? WHERE id = ?');
-    $update->execute([$paid, $paid === $order['total_centavos'] ? 'paid' : 'partial', $order['id']]);
 }
 
 function medivendDemoReview(PDO $database, array $order): void
@@ -146,8 +140,11 @@ function medivendDemoEndpoint(string $kind): void
         $key = medivendDemoKey();
         $body = null;
         if ($kind === 'payment') {
-            $body = medivendDemoBody(['state_token', 'coin_centavos']);
+            $body = medivendDemoBody(['event_id', 'coin_centavos']);
             if (!is_int($body->coin_centavos)) throw new MedivendCheckoutError(422, 'invalid_coin', 'Coin values must be integer centavos.');
+            if (!is_string($body->event_id) || !preg_match('/\A[a-f0-9]{64}\z/', $body->event_id)) {
+                throw new MedivendCheckoutError(422, 'invalid_event_id', 'A unique demo coin event ID is required.');
+            }
         } elseif ($kind === 'dispense') {
             $body = medivendDemoBody(['state_token', 'action', 'product_id']);
             if (!is_string($body->action) || !in_array($body->action, ['start', 'delivered', 'jam', 'no_confirmation'], true)
@@ -159,14 +156,29 @@ function medivendDemoEndpoint(string $kind): void
         $database->beginTransaction();
         $order = medivendDemoLock($database, $key);
         $view = medivendDemoView($order, $key);
+        $coinEvent = null;
         if ($body !== null) {
-            medivendDemoToken($order, $key, $body->state_token);
-            if ($kind === 'payment') medivendDemoCoin($database, $order, $body->coin_centavos);
-            else medivendDemoDispense($database, $order, $body->action, $body->product_id);
+            if ($kind === 'payment') $coinEvent = medivendProcessCoinEvent($database, $order, $body->event_id, $body->coin_centavos);
+            else {
+                medivendDemoToken($order, $key, $body->state_token);
+                medivendDemoDispense($database, $order, $body->action, $body->product_id);
+            }
             $order = medivendReadOrder($database, $order['reference']);
+        } elseif ($kind === 'status' && isset($_SERVER['HTTP_X_DEMO_EVENT_ID'])) {
+            $eventId = $_SERVER['HTTP_X_DEMO_EVENT_ID'];
+            if (!preg_match('/\A[a-f0-9]{64}\z/', $eventId)) throw new MedivendCheckoutError(422, 'invalid_event_id', 'Invalid demo event lookup.');
+            $coinEvent = medivendReadCoinEvent($database, $eventId);
+            if ($coinEvent && $coinEvent['transaction_id'] !== $order['id']) throw new MedivendCheckoutError(409, 'coin_event_conflict', 'That event belongs to another order. Please contact clinic staff.');
+            if ($coinEvent) $coinEvent['replayed'] = true;
         }
         $database->commit();
-        echo json_encode(medivendDemoView($order, $key), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $response = medivendDemoView($order, $key);
+        if ($kind === 'payment' || isset($_SERVER['HTTP_X_DEMO_EVENT_ID'])) $response['coin_event'] = $coinEvent;
+        if ($kind === 'payment' && $coinEvent['outcome'] === 'rejected') {
+            http_response_code(409);
+            $response['error'] = ['code' => $coinEvent['reason_code'], 'message' => $coinEvent['message']];
+        }
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     } catch (Throwable $error) {
         if ($database instanceof PDO && $database->inTransaction()) $database->rollBack();
         $known = $error instanceof MedivendCheckoutError;

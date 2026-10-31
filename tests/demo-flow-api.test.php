@@ -20,7 +20,7 @@ function demoHttp(string $path, string $key, ?array $body = null): array
 }
 function demoCoin(string $key, array $state, int $coin): array
 {
-    return demoHttp('demo-payment', $key, ['state_token' => $state['state_token'], 'coin_centavos' => $coin]);
+    return demoHttp('demo-payment', $key, ['event_id' => hash('sha256', $state['state_token'] . ':' . $coin), 'coin_centavos' => $coin]);
 }
 function demoDelivery(string $key, array $state, string $action, ?int $productId = null): array
 {
@@ -75,7 +75,9 @@ try {
     demoAssert(demoCoin($key, $state, 200)['status'] === 422, 'Unsupported coins must be rejected.');
     $paid1 = demoCoin($key, $state, 100);
     demoAssert($paid1['status'] === 200 && $paid1['body']['order']['amount_paid_centavos'] === 100 && $paid1['body']['order']['payment_status'] === 'partial', 'One peso must be partial.');
-    demoAssert(demoCoin($key, $state, 100)['status'] === 409, 'Duplicate coin token must not count twice.');
+    $duplicateCoin = demoCoin($key, $state, 100);
+    demoAssert($duplicateCoin['status'] === 200 && $duplicateCoin['body']['coin_event']['replayed'] === true
+        && $duplicateCoin['body']['order']['amount_paid_centavos'] === 100, 'Duplicate coin event must replay without counting twice.');
     $paid = demoCoin($key, $paid1['body'], 1000);
     demoAssert($paid['body']['order']['amount_paid_centavos'] === 1100 && $paid['body']['order']['payment_status'] === 'paid', 'Exact integer total becomes paid.');
     demoAssert($paid['body']['order']['dispensing_status'] === 'not_started' && $stockOf($a) === 20, 'Coins never dispense or alter stock.');
@@ -137,7 +139,7 @@ try {
     demoAssert($review['order']['order_status'] === 'needs_review' && $stockOf($real) === 3, 'Simulation cannot consume real-product inventory.');
 
     [$parallelKey, $parallelState] = $make([['product_id' => $a, 'quantity' => 1]]);
-    demoAssert(demoParallel('demo-payment', $parallelKey, ['state_token' => $parallelState['state_token'], 'coin_centavos' => 500]) === [200, 409, 409, 409, 409, 409], 'Concurrent copies of a coin event can be credited only once.');
+    demoAssert(demoParallel('demo-payment', $parallelKey, ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 500]) === [200, 200, 200, 200, 200, 200], 'Concurrent copies of a coin event must replay one persistent event.');
     $p = demoHttp('demo-order', $parallelKey)['body'];
     demoAssert($p['order']['amount_paid_centavos'] === 500, 'Concurrent coins must not over-credit.');
     $s = demoDelivery($parallelKey, $p, 'start')['body'];
@@ -152,8 +154,9 @@ try {
     if ($database->inTransaction()) $database->rollBack();
     $database->beginTransaction();
     $deleteItems = $database->prepare('DELETE ti FROM transaction_items ti JOIN transactions t ON ti.transaction_id = t.id WHERE t.reference = ?');
+    $deleteCoins = $database->prepare('DELETE ce FROM demo_coin_events ce JOIN transactions t ON ce.transaction_id = t.id WHERE t.reference = ?');
     $deleteOrder = $database->prepare('DELETE FROM transactions WHERE reference = ?');
-    foreach ($owned as $reference) { $deleteItems->execute([$reference]); $deleteOrder->execute([$reference]); }
+    foreach ($owned as $reference) { $deleteCoins->execute([$reference]); $deleteItems->execute([$reference]); $deleteOrder->execute([$reference]); }
     $deleteProduct = $database->prepare('DELETE FROM products WHERE id = ? AND sku LIKE ?');
     foreach ($fixtureIds as $id) $deleteProduct->execute([$id, $tag . '-%']);
     $database->commit();

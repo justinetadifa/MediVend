@@ -7,16 +7,20 @@ RUN IN XAMPP
    original medivend_db.sql through http://localhost/phpmyadmin/.
 4. Check config/database.php:
    localhost | port 3306 | medivend_db | root | empty password.
+   Apply the additive event-ledger migration and current-price update:
+   & 'C:\xampp\php\php.exe' scripts/migrate.php
 5. Open http://localhost/MediVend/ rather than opening index.html directly.
 6. Get Started > choose items > Review order > acknowledge demo > Save order.
-7. Demo payment shows the saved reference, total, received amount, and balance.
+7. Demo payment shows the reference, total, amount inserted, balance, and coins.
 8. Use Demo insert PHP 1 / PHP 5 / PHP 10. No real coins are accepted.
 9. After Demo payment complete, choose Simulate dispensing.
 10. Simulate each confirmed unit, a jam, or no sensor confirmation.
 
 CATALOG
 api/products.php reads active products. Names, descriptions, stock and prices
-come from MySQL. 500 centavos means PHP 5.00. Image paths are local, with bundled
+come from MySQL. All three current medicines are PHP 10 per unit (1000 centavos).
+The SQL price update leaves previous order totals and item snapshots unchanged.
+Image paths are local, with bundled
 photos/placeholders for null or broken paths. Loading/error/retry states and
 the centered, continuously animated welcome screen are preserved.
 
@@ -42,6 +46,12 @@ dispensing_status=not_started, order_status=pending, completed_at=NULL, and
 item dispensed_quantity=0. Saving does not reserve or reduce stock.
 Demo coins update amount_paid_centavos in integer centavos. Payment becomes
 partial or paid; overpayment is rejected because this demo has no change.
+Display: Exact payment only. No change. Only simulated events are rejected;
+physical coin rejection/return capabilities have not been verified.
+The new demo_coin_events ledger stores unique event IDs and accepted/rejected
+results. Ledger insertion and credit updates use one database transaction.
+Duplicate retries replay the stored result, without adding another credit.
+Different simultaneous events are checked against the saved remaining balance.
 Only fully paid demo orders may start the dispensing simulation. Stock is
 rechecked before starting and before each confirmed unit.
 Each confirmed simulated unit atomically decreases demo product stock and
@@ -51,12 +61,15 @@ Jam or no sensor confirmation stops with needs_review and the message
 Please contact clinic staff. Partial deliveries are preserved. No automatic
 retry or refund is claimed. Real stock (is_demo=0 products) is not consumed.
 The saved reference is not proof of real payment or physical delivery.
-Start a new session clears the browser cart, not saved database orders.
-No schema changes or migrations are needed.
+After credit is inserted, Start over/home opens staff assistance and keeps the
+current order and credit. There is no cancellation or refund action. A session
+may end after complete confirmed delivery, or before any credit/event exists.
+Only the demo_coin_events table is added; existing order rows are not changed.
 
-The current order key and counters are restored on same-tab reload. Simulation
-events are never automatically resent. If a response is lost, Refresh status
-reads the saved records. An uncertain incomplete delivery must be stopped with
+The current order and credit recover on reload or reopening a tab in the same
+browser. Pending coin IDs/denominations are kept before sending. Retry same
+demo coin event resends that ID safely; Refresh status checks the ledger first.
+The animation alone never counts a coin. An uncertain delivery must be stopped with
 Simulate no sensor confirmation; it is not automatically repeated.
 
 TEST
@@ -64,20 +77,25 @@ From PowerShell in this folder, with Apache/MySQL running:
 & 'C:\xampp\php\php.exe' tests/products-api.test.php
 & 'C:\xampp\php\php.exe' tests/checkout-api.test.php
 & 'C:\xampp\php\php.exe' tests/demo-flow-api.test.php
+& 'C:\xampp\php\php.exe' tests/coin-payment-api.test.php
 
 The checkout test creates and removes its own temporary products/orders and
 checks validation, snapshots, rollback, authoritative prices, and concurrent
 retry protection. It does not change existing products or stock.
-The simulation test uses its own temporary demo inventory and checks coins,
-overpayment, duplicate events, confirmed stock updates, jams, and completion.
+The simulation/coin tests use their own temporary data and check mixed coins,
+multiple items, durable duplicate replay, concurrent events, refresh lookup,
+overpayment, payment completion, stock updates, jams, and missing confirmation.
 
 MANUAL CHECK
-Two Paracetamol and one Cetirizine from the sample data total PHP 18.00.
+Two Paracetamol and one Cetirizine now total PHP 30.00 for a new order.
 Save the order and find its reference in transactions in phpMyAdmin. Check the
 item snapshots in transaction_items, pending/not_started statuses, zero paid
 and dispensed values, and unchanged stock in products.
-Then simulate PHP 10 + PHP 5 + three PHP 1 coins. Check paid status and 1800
-received centavos. Simulate dispensing to confirm units or stop with a jam.
+Then simulate two PHP 10 + one PHP 5 + five PHP 1 coins. Check paid status and
+3000 inserted centavos. Check eight accepted rows in demo_coin_events.
+Before completion, press Start over and verify credit is preserved with a
+staff-assistance path. Try a coin larger than the remainder to see guidance
+for smaller simulated denominations. New events after full payment fail.
 Manual confirmed-delivery tests consume demo stock; use demo test inventory.
 For a connection failure, stop MySQL after reaching review, save, restart
 MySQL, and Retry save. The cart and original request key are preserved.

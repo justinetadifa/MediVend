@@ -9,10 +9,10 @@
   <link rel="icon" type="image/png" href="assets/MediVendWebLogo.png">
   <link rel="apple-touch-icon" href="assets/MediVendWebLogo.png">
   <link rel="stylesheet" href="assets/fonts.css">
-  <link rel="stylesheet" href="assets/style.css?v=20261031-3">
+  <link rel="stylesheet" href="assets/style.css?v=20261031-4">
   <link rel="stylesheet" href="assets/welcome.css?v=20261031-2">
-  <script src="assets/demo.js?v=20261031-3" defer></script>
-  <script src="assets/app.js?v=20261031-3" defer></script>
+  <script src="assets/demo.js?v=20261031-4" defer></script>
+  <script src="assets/app.js?v=20261031-4" defer></script>
 </head>
 <body class="welcome-screen">
   <div class="app">
@@ -41,6 +41,13 @@
       <button id="keep" class="secondary">Keep shopping</button>
       <button id="reset" class="primary">Start over</button>
     </div>
+  </dialog>
+  <dialog id="staff-dialog" aria-labelledby="staff-title" aria-describedby="staff-description">
+    <span class="dialog-icon" aria-hidden="true">!</span>
+    <h2 id="staff-title">Please contact clinic staff</h2>
+    <p id="staff-description">Your order and inserted demo credit remain recorded. Keep this reference for staff assistance. No refund has been issued.</p>
+    <dl class="staff-details"><dt>Saved order</dt><dd id="staff-reference"></dd><dt>Last confirmed amount inserted</dt><dd id="staff-amount"></dd></dl>
+    <button class="primary" id="staff-close">Keep current order</button>
   </dialog>
 </body>
 </html>
