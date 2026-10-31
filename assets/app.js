@@ -1,5 +1,5 @@
-/* Prices and quantity limits come from PHP/MySQL. Checkout remains a browser
-   simulation: it does not record payment, reserve stock, or dispense items. */
+/* PHP owns prices, simulated coin events, and confirmed demo delivery counts.
+   Real payments and physical hardware are never connected. */
 let products = [];
 let catalogStatus = 'loading';
 let catalogError = '';
@@ -79,7 +79,8 @@ const iconPaths = {
   bag: '<path d="M5 8h14l1 12H4L5 8Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   shield: '<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/>',
-  spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>'
+  spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
 };
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]}</svg>`;
 const main = document.querySelector('#main');
@@ -87,10 +88,161 @@ const cart = new Map();
 let screen = 'welcome';
 let lastOrder = null;
 let toastTimer;
+let checkoutAttempt = null;
+let checkoutBusy = false;
+let checkoutUncertain = false;
+let checkoutAcknowledged = false;
+let checkoutError = '';
+const checkoutStorageKey = 'medivend.pending-checkout.v1';
 
 const money = amount => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount / 100);
 const quantity = () => [...cart.values()].reduce((sum, count) => sum + count, 0);
 const total = () => products.reduce((sum, product) => sum + product.price * (cart.get(product.id) || 0), 0);
+
+function canonicalCheckoutItems(items) {
+  if (!Array.isArray(items) || !items.length || items.length > 100) throw new Error('invalid_checkout_items');
+  const ids = new Set();
+  return items.map(item => {
+    if (!item || !Number.isInteger(item.product_id) || item.product_id < 1 || item.product_id > 4294967295
+      || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 65535 || ids.has(item.product_id)) throw new Error('invalid_checkout_items');
+    ids.add(item.product_id);
+    return { product_id: item.product_id, quantity: item.quantity };
+  }).sort((left, right) => left.product_id - right.product_id);
+}
+
+function keepCheckoutAttempt() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const key = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  const items = canonicalCheckoutItems([...cart].map(([id, count]) => ({ product_id: Number(id), quantity: count })));
+  const catalog = products.filter(product => cart.has(product.id)).map(product => ({
+    id: Number(product.id), sku: '', name: product.name, description: product.description,
+    image_path: product.image, price_centavos: product.price, stock_quantity: product.stock,
+    is_demo: product.form === 'Demo item'
+  }));
+  const attempt = { key, items, catalog };
+  // Keep the immutable IDs, quantities and retry key before sending any request.
+  // Cached catalog values are display-only and are never sent to checkout.php.
+  sessionStorage.setItem(checkoutStorageKey, JSON.stringify(attempt));
+  return attempt;
+}
+
+function forgetCheckoutAttempt() {
+  checkoutAttempt = null;
+  try { sessionStorage.removeItem(checkoutStorageKey); } catch { /* A replay remains safe if storage cannot be cleared. */ }
+}
+
+function restoreCheckoutAttempt() {
+  try {
+    const stored = sessionStorage.getItem(checkoutStorageKey);
+    if (!stored) return;
+    const attempt = JSON.parse(stored);
+    if (typeof attempt.key !== 'string' || !/^[a-f0-9]{64}$/.test(attempt.key)) throw new Error('invalid_retry_key');
+    const items = canonicalCheckoutItems(attempt.items);
+    const cached = normalizeCatalog({ products: attempt.catalog });
+    if (cached.length !== items.length || items.some(item => !cached.some(product => Number(product.id) === item.product_id))) throw new Error('invalid_cached_cart');
+    checkoutAttempt = { key: attempt.key, items, catalog: attempt.catalog };
+    products = cached;
+    catalogStatus = 'ready';
+    for (const item of items) cart.set(String(item.product_id), item.quantity);
+    checkoutUncertain = true;
+    checkoutAcknowledged = true;
+    checkoutError = 'An earlier checkout is awaiting confirmation. Retry safely to check or save that same order.';
+    screen = 'checkout';
+  } catch {
+    forgetCheckoutAttempt();
+  }
+}
+
+function savedOrderFromResponse(payload, expectedItems) {
+  const order = payload?.order;
+  if (!order || typeof order.reference !== 'string' || !/^MV-[A-F0-9]{32}$/.test(order.reference)
+    || !Number.isSafeInteger(order.total_centavos) || order.total_centavos < 0 || order.total_centavos > 4294967295
+    || !Number.isSafeInteger(order.amount_paid_centavos) || order.amount_paid_centavos < 0 || order.amount_paid_centavos > order.total_centavos
+    || !['pending', 'partial', 'paid'].includes(order.payment_status)
+    || !['not_started', 'in_progress', 'partial', 'dispensed', 'needs_review'].includes(order.dispensing_status)
+    || !['pending', 'processing', 'completed', 'needs_review'].includes(order.order_status) || order.is_demo !== true
+    || typeof payload.state_token !== 'string' || !/^[a-f0-9]{64}$/.test(payload.state_token)
+    || !Array.isArray(order.items)) throw new Error('invalid_saved_order');
+  const items = canonicalCheckoutItems(order.items);
+  if (JSON.stringify(items) !== JSON.stringify(expectedItems)) throw new Error('saved_cart_mismatch');
+  let itemTotal = 0;
+  const snapshots = order.items.map(item => {
+    if (typeof item.product_name !== 'string' || !item.product_name.trim()
+      || !Number.isSafeInteger(item.unit_price_centavos) || item.unit_price_centavos < 0
+      || !Number.isSafeInteger(item.dispensed_quantity) || item.dispensed_quantity < 0 || item.dispensed_quantity > item.quantity) throw new Error('invalid_saved_item');
+    itemTotal += item.unit_price_centavos * item.quantity;
+    const cached = products.find(product => Number(product.id) === item.product_id);
+    return {
+      id: String(item.product_id), name: item.product_name, price: item.unit_price_centavos,
+      qty: item.quantity, delivered: item.dispensed_quantity, color: 'mint',
+      ...productImages({ sku: '', name: item.product_name, image_path: cached?.image || null })
+    };
+  });
+  if (itemTotal !== order.total_centavos) throw new Error('invalid_saved_total');
+  return { reference: order.reference, total: order.total_centavos, paid: order.amount_paid_centavos,
+    paymentStatus: order.payment_status, dispensingStatus: order.dispensing_status, orderStatus: order.order_status,
+    isDemo: order.is_demo, token: payload.state_token, items: snapshots };
+}
+
+function syncCheckoutControls() {
+  const locked = checkoutBusy || checkoutUncertain || DemoFlow.locked;
+  document.querySelector('#home').disabled = locked;
+  const brand = document.querySelector('.brand');
+  brand.setAttribute('aria-disabled', String(locked));
+  if (locked) brand.tabIndex = -1;
+  else brand.removeAttribute('tabindex');
+}
+
+async function saveOrder() {
+  if (checkoutBusy || screen !== 'checkout' || !quantity()) return;
+  if (!checkoutAttempt && (!checkoutAcknowledged || catalogStatus !== 'ready')) return;
+  if (!checkoutAttempt) {
+    try { checkoutAttempt = keepCheckoutAttempt(); }
+    catch {
+      checkoutError = 'The checkout request could not be kept for safe retries. Check browser storage and item quantities, then try again. Your cart is unchanged.';
+      render();
+      return;
+    }
+  }
+  const attempt = checkoutAttempt;
+  checkoutBusy = true;
+  checkoutUncertain = true;
+  checkoutError = '';
+  render();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch('api/checkout.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Idempotency-Key': attempt.key },
+      body: JSON.stringify({ items: attempt.items }), cache: 'no-store', signal: controller.signal
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500 && typeof payload?.error?.message === 'string') {
+        forgetCheckoutAttempt();
+        checkoutUncertain = false;
+        checkoutError = payload.error.message;
+        if (payload.error.code === 'idempotency_conflict') checkoutAcknowledged = false;
+        return;
+      }
+      throw new Error('checkout_not_confirmed');
+    }
+    lastOrder = savedOrderFromResponse(payload, attempt.items);
+    DemoFlow.attach(attempt.key);
+    forgetCheckoutAttempt();
+    checkoutUncertain = false;
+    checkoutAcknowledged = false;
+    cart.clear();
+    go('pending');
+  } catch {
+    checkoutError = 'The order could not be confirmed. Your cart is kept. Retry safely to check or save the same order.';
+  } finally {
+    clearTimeout(timeout);
+    checkoutBusy = false;
+    if (screen === 'checkout') render();
+    else syncCheckoutControls();
+  }
+}
 
 function renderCatalog() {
   if (screen !== 'shop') return;
@@ -154,6 +306,11 @@ function announce(message) {
 }
 
 function go(next) {
+  if ((checkoutBusy || checkoutUncertain || DemoFlow.locked) && next !== 'pending') return;
+  if (next === 'checkout' && !checkoutAttempt) {
+    checkoutAcknowledged = false;
+    checkoutError = '';
+  }
   clearTimeout(toastTimer);
   document.querySelector('#toast').classList.remove('show');
   screen = next;
@@ -212,7 +369,7 @@ function cartMarkup() {
     </div>`).join('') : `<div class="empty"><span class="empty-icon">${icon('bag')}<span>+</span></span><h3>A little empty here.</h3><p>Add something from the collection<br>to get started.</p></div>`}</div>
     <div class="cart-bottom"><div class="total"><div><span>Total</span><small>${count} item${count === 1 ? '' : 's'} in your cart</small></div><strong>${money(total())}</strong></div>
     <button class="primary checkout-button" data-action="checkout" ${!count || catalogStatus !== 'ready' ? 'disabled' : ''}>Review order ${icon('arrow')}</button>
-    <p class="cart-note">${icon('shield')} Demo only. No payment required.</p></div>
+    <p class="cart-note">${icon('shield')} Demo only. No real payment.</p></div>
   </aside>`;
 }
 
@@ -246,20 +403,26 @@ function summaryLine(product, count) {
 }
 
 function checkout() {
-  return `<section class="checkout"><button class="back" data-action="shop">${icon('back')} Back to collection</button>
-    <div class="page-head"><div><p class="eyebrow">Almost there</p><h1>One last look.</h1><p class="sub">A quick review before you finish.</p></div>${steps(2)}</div>
-    <div class="checkout-grid"><div class="panel order-panel"><div class="panel-heading"><h2>Your selection</h2><span class="count">${quantity()} item${quantity() === 1 ? '' : 's'}</span></div>${products.filter(product => cart.has(product.id)).map(product => summaryLine(product, cart.get(product.id))).join('')}<div class="total"><span>Order total</span><strong>${money(total())}</strong></div><p class="notice">Catalog prices · Demo checkout only.</p></div>
-    <div class="panel checkout-panel"><span class="panel-icon">${icon('shield')}</span><h2>A simple demo checkout.</h2><p class="sub">No coins, payment, or dispensing. Just a preview of your MediVend experience.</p><label class="check-label"><input id="ack" type="checkbox"><span>I understand this is a demo and medicine use requires clinic supervision.</span></label><button id="complete" class="primary" data-action="complete" disabled>Complete demo order ${icon('arrow')}</button><p class="cart-note">You can go back and edit your items anytime.</p></div></div>
+  const locked = checkoutBusy || checkoutUncertain;
+  return `<section class="checkout"><button class="back" data-action="shop" ${locked ? 'disabled' : ''}>${icon('back')} Back to collection</button>
+    <div class="page-head"><div><p class="eyebrow">Almost there</p><h1>One last look.</h1><p class="sub">Review your items before saving your order.</p></div>${steps(2)}</div>
+    <div class="checkout-grid"><div class="panel order-panel"><div class="panel-heading"><h2>Your selection</h2><span class="count">${quantity()} item${quantity() === 1 ? '' : 's'}</span></div>${products.filter(product => cart.has(product.id)).map(product => summaryLine(product, cart.get(product.id))).join('')}<div class="total"><span>Estimated total</span><strong>${money(total())}</strong></div><p class="notice">Final prices are confirmed when your order is saved.</p></div>
+    <div class="panel checkout-panel ${checkoutError ? 'has-error' : ''}" aria-busy="${checkoutBusy}"><span class="panel-icon">${icon('shield')}</span><h2>Save a demo order.</h2><p class="sub">Test payment and delivery with simulation controls. No real coins or hardware are connected.</p>
+    ${checkoutAttempt ? '' : `<label class="check-label"><input id="ack" type="checkbox" ${checkoutAcknowledged ? 'checked' : ''}><span>I understand this is a simulation. Confirmed demo delivery changes database stock only.</span></label>`}
+    ${checkoutError ? `<p class="checkout-error" role="alert">${escapeHtml(checkoutError)}</p>` : ''}
+    <button id="complete" class="primary" data-action="complete" ${checkoutBusy || (!checkoutAttempt && (!checkoutAcknowledged || catalogStatus !== 'ready')) ? 'disabled' : ''}>${checkoutBusy ? '<span class="button-spinner" aria-hidden="true"></span>Saving order…' : checkoutAttempt ? `Retry save ${icon('arrow')}` : `Save order ${icon('arrow')}`}</button>
+    <p class="cart-note">${checkoutAttempt ? 'Retrying checks the same order, without creating a second one.' : 'You can go back and edit your items before saving.'}</p></div></div>
   </section>`;
 }
 
-function success() {
-  return `<section class="success"><div class="success-intro"><div class="success-icon">${icon('check')}</div><p class="eyebrow">Demo complete</p><h1>A little care, all set.</h1><p class="sub">Your sample order is complete.<br>No payment was taken and no medicine was dispensed.</p></div><div class="panel"><div class="order-reference"><span>Demo order</span><span>${lastOrder.id}</span></div>${lastOrder.items.map(product => summaryLine(product, product.qty)).join('')}<div class="total"><span>Sample total</span><strong>${money(lastOrder.total)}</strong></div></div><button class="primary" data-action="new">Start a new session ${icon('arrow')}</button></section>`;
+function paymentPending() {
+  return DemoFlow.markup();
 }
 
 function render(entering = false) {
   document.body.classList.toggle('welcome-screen', screen === 'welcome');
-  main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : success();
+  main.innerHTML = screen === 'welcome' ? welcome() : screen === 'shop' ? shop() : screen === 'checkout' ? checkout() : paymentPending();
+  syncCheckoutControls();
   if (entering && screen !== 'welcome') {
     main.firstElementChild.classList.add('screen-enter');
   }
@@ -282,6 +445,10 @@ main.addEventListener('click', event => {
   const action = button.dataset.action;
   const product = products.find(item => item.id === button.dataset.id);
 
+  if (action.startsWith('demo-')) { DemoFlow.action(button); return; }
+
+  if ((checkoutBusy || checkoutUncertain || DemoFlow.locked) && action !== 'complete') return;
+
   if (action === 'begin' || action === 'shop') go('shop');
   if (action === 'retry') loadCatalog();
   if (action === 'add' && product && catalogStatus === 'ready') {
@@ -302,29 +469,30 @@ main.addEventListener('click', event => {
     refreshCart(button, `${product.name} removed`);
   }
   if (action === 'checkout' && quantity() && catalogStatus === 'ready') go('checkout');
-  if (action === 'complete' && screen === 'checkout' && quantity() && catalogStatus === 'ready' && document.querySelector('#ack')?.checked) {
-    lastOrder = {
-      id: 'MV-' + Date.now().toString(36).toUpperCase(),
-      total: total(),
-      items: products.filter(item => cart.has(item.id)).map(item => ({ ...item, qty: cart.get(item.id) }))
-    };
-    cart.clear();
-    go('success');
-  }
+  if (action === 'complete') saveOrder();
   if (action === 'new') resetSession();
 });
 
 main.addEventListener('change', event => {
-  if (event.target.id === 'ack') document.querySelector('#complete').disabled = !event.target.checked;
+  if (event.target.id === 'ack') {
+    checkoutAcknowledged = event.target.checked;
+    document.querySelector('#complete').disabled = !checkoutAcknowledged || checkoutBusy || catalogStatus !== 'ready';
+  }
 });
 
 function requestReset() {
+  if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
   if (quantity()) document.querySelector('#reset-dialog').showModal();
   else resetSession();
 }
 
 function resetSession() {
+  if (checkoutBusy || checkoutUncertain || DemoFlow.locked) return;
   document.querySelector('#reset-dialog').close();
+  forgetCheckoutAttempt();
+  DemoFlow.clear();
+  checkoutAcknowledged = false;
+  checkoutError = '';
   cart.clear();
   lastOrder = null;
   go('welcome');
@@ -363,5 +531,8 @@ document.addEventListener('pointerdown', event => {
   button.append(ripple);
 });
 
+restoreCheckoutAttempt();
+const resumeDemoOrder = !checkoutAttempt && DemoFlow.restore();
 render();
-loadCatalog();
+if (resumeDemoOrder) DemoFlow.refresh();
+else if (!checkoutAttempt) loadCatalog();

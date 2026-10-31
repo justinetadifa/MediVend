@@ -1,65 +1,88 @@
-MEDIVEND — PHP / MYSQL CATALOG DEMO
+MEDIVEND — DATABASE-BACKED DEMO CHECKOUT
 
-RUN WITH XAMPP
-1. Keep this project in C:\xampp\htdocs\MediVend.
+RUN IN XAMPP
+1. Keep the project in C:\xampp\htdocs\MediVend.
 2. Start Apache and MySQL in the XAMPP Control Panel.
-3. Use the existing medivend_db database. On a fresh installation, import your
-   original medivend_db.sql using http://localhost/phpmyadmin/.
+3. Use the existing medivend_db database. For a fresh machine, import the
+   original medivend_db.sql through http://localhost/phpmyadmin/.
 4. Check config/database.php:
-   host: localhost | port: 3306 | database: medivend_db
-   username: root | password: empty
-5. Open http://localhost/MediVend/ and tap “Get Started”.
+   localhost | port 3306 | medivend_db | root | empty password.
+5. Open http://localhost/MediVend/ rather than opening index.html directly.
+6. Get Started > choose items > Review order > acknowledge demo > Save order.
+7. Demo payment shows the saved reference, total, received amount, and balance.
+8. Use Demo insert PHP 1 / PHP 5 / PHP 10. No real coins are accepted.
+9. After Demo payment complete, choose Simulate dispensing.
+10. Simulate each confirmed unit, a jam, or no sensor confirmation.
 
-Do not open index.html directly or use a static-only live server for ordering.
-The catalog needs PHP running through Apache. There is no build or npm install.
-The existing database schema and original SQL file are unchanged.
+CATALOG
+api/products.php reads active products. Names, descriptions, stock and prices
+come from MySQL. 500 centavos means PHP 5.00. Image paths are local, with bundled
+photos/placeholders for null or broken paths. Loading/error/retry states and
+the centered, continuously animated welcome screen are preserved.
 
-CATALOG AND PRICES
-- api/products.php reads active rows from products (is_active = 1).
-- Product names, descriptions, prices, and quantities come from MySQL.
-- price_centavos is an integer: 500 = PHP 5.00, 1000 = PHP 10.00.
-- stock_quantity supplies each item's cart limit; zero stock disables adding.
-- image_path is a local web path such as assets/my-product.png.
-- Null/empty or broken images use a bundled photo or local placeholder.
-- Loading, empty catalog, and connection failure have separate visible states.
-- “Try again” / “Refresh catalog” retries the request.
-- Start over or a page reload gets a fresh catalog and clears the session.
+SAVING AN ORDER
+- JavaScript posts only product IDs and quantities to api/checkout.php.
+- A separate Idempotency-Key header identifies the same request on retries.
+- PHP validates integer quantities, active products, and current stock.
+- Prices, names, and compartments are read and snapshotted from the database.
+- One database transaction saves transactions plus transaction_items.
+- Any failure rolls back every write. Validation errors keep the cart editable.
+- Repeated taps and concurrent retries create one order per request key.
+- The same request returns the original reference, snapshots, and total.
 
-WHAT IS PRESERVED
-- Centered welcome screen and continuously moving medicine photos.
-- MediVend branding, Poppins/Inter fonts, green buttons, and black outlines.
-- Touch feedback, screen transitions, cart effects, and local images.
-- Add, increase/decrease, remove, computed totals, and checkout review.
-- Empty-cart checkout prevention and demo acknowledgement.
+IF SAVING CANNOT BE CONFIRMED
+Your cart and request key are kept in this tab's session storage. Use Retry
+save to check/save the same order. Reloading the tab restores an unconfirmed
+checkout. Editing and starting over are temporarily disabled while its result
+is uncertain; retrying prevents a second order after a lost response.
 
-SIMULATION BOUNDARIES
-Only the catalog is connected to the database. Completing a demo order does
-not write transactions, take payment, reserve/decrement stock, or dispense
-medicine. The cart and demo order remain in browser memory; reloading clears
-them. Medicine use still requires clinic guidance.
+DEMO PAYMENT AND DISPENSING
+Every new order is a demo with payment_status=pending, amount_paid_centavos=0,
+dispensing_status=not_started, order_status=pending, completed_at=NULL, and
+item dispensed_quantity=0. Saving does not reserve or reduce stock.
+Demo coins update amount_paid_centavos in integer centavos. Payment becomes
+partial or paid; overpayment is rejected because this demo has no change.
+Only fully paid demo orders may start the dispensing simulation. Stock is
+rechecked before starting and before each confirmed unit.
+Each confirmed simulated unit atomically decreases demo product stock and
+increases the item's dispensed_quantity. Duplicate state-bound events cannot
+count twice. Completion requires every unit to be confirmed.
+Jam or no sensor confirmation stops with needs_review and the message
+Please contact clinic staff. Partial deliveries are preserved. No automatic
+retry or refund is claimed. Real stock (is_demo=0 products) is not consumed.
+The saved reference is not proof of real payment or physical delivery.
+Start a new session clears the browser cart, not saved database orders.
+No schema changes or migrations are needed.
 
-QUICK CHECK
-1. Open http://localhost/MediVend/api/products.php and inspect the JSON.
-2. In the supplied sample data, two Paracetamol items total PHP 10.00.
-   Adding one Cetirizine brings the total to PHP 18.00.
-3. Add up to the stock limit, decrease quantity, remove, and review your order.
-4. Stop MySQL temporarily to view the connection-error state; restart it and
-   tap “Try again”. No active products produces the empty-catalog state.
-5. In PowerShell from this project directory, run the read-only API checks:
-   & 'C:\xampp\php\php.exe' tests/products-api.test.php
+The current order key and counters are restored on same-tab reload. Simulation
+events are never automatically resent. If a response is lost, Refresh status
+reads the saved records. An uncertain incomplete delivery must be stopped with
+Simulate no sensor confirmation; it is not automatically repeated.
 
-ON A 7-INCH TOUCHSCREEN
-Use 1024 x 600 landscape with 100% display scaling and browser zoom.
-Connect the screen's TOUCH port by USB and move the browser to that display.
-Press F11 for full screen. MySQL and Apache must keep running.
+TEST
+From PowerShell in this folder, with Apache/MySQL running:
+& 'C:\xampp\php\php.exe' tests/products-api.test.php
+& 'C:\xampp\php\php.exe' tests/checkout-api.test.php
+& 'C:\xampp\php\php.exe' tests/demo-flow-api.test.php
 
-FILES TO EDIT
-config/database.php       Local connection credentials.
-includes/database.php     PDO connection helper.
-api/products.php          Read-only active-product JSON endpoint.
-assets/app.js             Catalog fetching, cart, and simulated checkout.
-assets/style.css          Shared branding, catalog states, and responsive UI.
-assets/welcome.css        Centered welcome layout and continuous animation.
-assets/fonts.css          Bundled Poppins and Inter fonts.
+The checkout test creates and removes its own temporary products/orders and
+checks validation, snapshots, rollback, authoritative prices, and concurrent
+retry protection. It does not change existing products or stock.
+The simulation test uses its own temporary demo inventory and checks coins,
+overpayment, duplicate events, confirmed stock updates, jams, and completion.
 
-See README.md for the endpoint contract, image fallback behavior, and tests.
+MANUAL CHECK
+Two Paracetamol and one Cetirizine from the sample data total PHP 18.00.
+Save the order and find its reference in transactions in phpMyAdmin. Check the
+item snapshots in transaction_items, pending/not_started statuses, zero paid
+and dispensed values, and unchanged stock in products.
+Then simulate PHP 10 + PHP 5 + three PHP 1 coins. Check paid status and 1800
+received centavos. Simulate dispensing to confirm units or stop with a jam.
+Manual confirmed-delivery tests consume demo stock; use demo test inventory.
+For a connection failure, stop MySQL after reaching review, save, restart
+MySQL, and Retry save. The cart and original request key are preserved.
+
+Use 1024 x 600 landscape, 100% display scaling/browser zoom, and F11 full screen
+for the intended touchscreen layout. Apache and MySQL must keep running.
+
+See README.md for the JSON contract, retry behavior, and detailed tests.

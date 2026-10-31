@@ -1,0 +1,180 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/checkout.php';
+require_once __DIR__ . '/database.php';
+
+function medivendDemoKey(): string
+{
+    $key = $_SERVER['HTTP_X_DEMO_ORDER_KEY'] ?? '';
+    if (!preg_match('/\A[a-f0-9]{64}\z/', $key)) {
+        throw new MedivendCheckoutError(403, 'demo_order_required', 'Open the current saved demo order to use simulation controls.');
+    }
+    return $key;
+}
+
+function medivendDemoView(array $order, string $key): array
+{
+    // The token is a compare-and-swap event guard, tied to every persisted
+    // balance/status/delivery counter. Once an event changes a row, its token
+    // cannot be reused, even after PHP or the browser restarts. No event table
+    // or schema change is required. The order key is a private capability.
+    return ['order' => $order, 'state_token' => hash_hmac('sha256', json_encode($order, JSON_THROW_ON_ERROR), $key)];
+}
+
+function medivendDemoLock(PDO $database, string $key): array
+{
+    $reference = medivendCheckoutReference($key);
+    $lock = $database->prepare('SELECT id FROM transactions WHERE reference = ? FOR UPDATE');
+    $lock->execute([$reference]);
+    if (!$lock->fetch()) throw new MedivendCheckoutError(404, 'order_not_found', 'The current order could not be found.');
+    $order = medivendReadOrder($database, $reference);
+    if (!$order || !$order['is_demo']) throw new MedivendCheckoutError(403, 'demo_only', 'Simulation is restricted to demo orders.');
+    return $order;
+}
+
+function medivendDemoBody(array $fields): stdClass
+{
+    if (strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0])) !== 'application/json') {
+        throw new MedivendCheckoutError(415, 'json_required', 'Send simulation events as JSON.');
+    }
+    $raw = file_get_contents('php://input', false, null, 0, 4097);
+    if ($raw === false || strlen($raw) > 4096) throw new MedivendCheckoutError(413, 'request_too_large', 'The simulation event is too large.');
+    try { $body = json_decode($raw, false, 16, JSON_THROW_ON_ERROR); }
+    catch (JsonException $error) { throw new MedivendCheckoutError(400, 'invalid_json', 'Invalid simulation event JSON.'); }
+    if (!$body instanceof stdClass) throw new MedivendCheckoutError(422, 'invalid_event', 'Invalid simulation event.');
+    $keys = array_keys(get_object_vars($body)); sort($keys); sort($fields);
+    if ($keys !== $fields) throw new MedivendCheckoutError(422, 'invalid_event', 'Send only the simulation event fields.');
+    return $body;
+}
+
+function medivendDemoToken(array $order, string $key, $token): void
+{
+    if (!is_string($token) || !hash_equals(medivendDemoView($order, $key)['state_token'], $token)) {
+        throw new MedivendCheckoutError(409, 'stale_event', 'This event was already handled or the order changed. Refresh status before another simulation.');
+    }
+}
+
+function medivendDemoCoin(PDO $database, array $order, int $coin): void
+{
+    if (!in_array($coin, [100, 500, 1000], true)) throw new MedivendCheckoutError(422, 'invalid_coin', 'Only demo ₱1, ₱5, and ₱10 coins are supported.');
+    if ($order['order_status'] !== 'pending' || $order['dispensing_status'] !== 'not_started'
+        || !in_array($order['payment_status'], ['pending', 'partial'], true)) {
+        throw new MedivendCheckoutError(409, 'payment_closed', 'This order is not accepting demo coin events.');
+    }
+    $paid = $order['amount_paid_centavos'] + $coin;
+    if ($paid > $order['total_centavos']) throw new MedivendCheckoutError(409, 'no_change', 'That coin exceeds the remaining balance. This demo does not provide change.');
+    $update = $database->prepare('UPDATE transactions SET amount_paid_centavos = ?, payment_status = ? WHERE id = ?');
+    $update->execute([$paid, $paid === $order['total_centavos'] ? 'paid' : 'partial', $order['id']]);
+}
+
+function medivendDemoReview(PDO $database, array $order): void
+{
+    $update = $database->prepare("UPDATE transactions SET order_status = 'needs_review', dispensing_status = 'needs_review', completed_at = NULL WHERE id = ?");
+    $update->execute([$order['id']]);
+}
+
+function medivendDemoDispense(PDO $database, array $order, string $action, ?int $productId): void
+{
+    if ($order['payment_status'] !== 'paid' || $order['amount_paid_centavos'] !== $order['total_centavos']) {
+        throw new MedivendCheckoutError(409, 'payment_required', 'Demo payment must be complete before dispensing simulation.');
+    }
+    if ($action === 'start') {
+        if ($order['order_status'] !== 'pending' || $order['dispensing_status'] !== 'not_started') throw new MedivendCheckoutError(409, 'dispensing_closed', 'Dispensing cannot be restarted. Please check the order status.');
+        $productQuery = $database->prepare('SELECT stock_quantity, is_active, is_demo FROM products WHERE id = ? FOR UPDATE');
+        foreach ($order['items'] as $item) {
+            $productQuery->execute([$item['product_id']]);
+            $product = $productQuery->fetch();
+            if (!$product || !(int) $product['is_demo'] || !(int) $product['is_active']
+                || (int) $product['stock_quantity'] < $item['quantity'] - $item['dispensed_quantity']) {
+                medivendDemoReview($database, $order);
+                return;
+            }
+        }
+        $update = $database->prepare("UPDATE transactions SET dispensing_status = 'in_progress', order_status = 'processing' WHERE id = ?");
+        $update->execute([$order['id']]);
+        return;
+    }
+    if ($action === 'no_confirmation' && $order['order_status'] === 'pending' && $order['dispensing_status'] === 'not_started') {
+        medivendDemoReview($database, $order);
+        return;
+    }
+    if ($order['order_status'] !== 'processing' || !in_array($order['dispensing_status'], ['in_progress', 'partial'], true)) {
+        throw new MedivendCheckoutError(409, 'dispensing_closed', 'This simulation has stopped. Please contact clinic staff if delivery is incomplete.');
+    }
+    if (in_array($action, ['jam', 'no_confirmation'], true)) {
+        medivendDemoReview($database, $order);
+        return;
+    }
+    if ($action !== 'delivered' || $productId === null) throw new MedivendCheckoutError(422, 'invalid_event', 'Choose a valid dispensing simulation outcome.');
+    $selected = null;
+    foreach ($order['items'] as $item) if ($item['product_id'] === $productId) $selected = $item;
+    if (!$selected || $selected['dispensed_quantity'] >= $selected['quantity']) throw new MedivendCheckoutError(409, 'item_complete', 'This item has no remaining units to confirm.');
+    $productQuery = $database->prepare('SELECT stock_quantity, is_active, is_demo FROM products WHERE id = ? FOR UPDATE');
+    $productQuery->execute([$productId]);
+    $product = $productQuery->fetch();
+    if (!$product || !(int) $product['is_demo'] || !(int) $product['is_active'] || (int) $product['stock_quantity'] < 1) {
+        medivendDemoReview($database, $order);
+        return;
+    }
+    $stock = $database->prepare('UPDATE products SET stock_quantity = stock_quantity - 1 WHERE id = ? AND stock_quantity > 0 AND is_demo = 1');
+    $stock->execute([$productId]);
+    if ($stock->rowCount() !== 1) throw new RuntimeException('Stock confirmation failed.');
+    $confirm = $database->prepare('UPDATE transaction_items SET dispensed_quantity = dispensed_quantity + 1 WHERE transaction_id = ? AND product_id = ? AND dispensed_quantity < quantity');
+    $confirm->execute([$order['id'], $productId]);
+    if ($confirm->rowCount() !== 1) throw new RuntimeException('Delivery confirmation failed.');
+    $remaining = 0;
+    foreach ($order['items'] as $item) $remaining += $item['quantity'] - $item['dispensed_quantity'];
+    $complete = $remaining === 1;
+    $update = $database->prepare('UPDATE transactions SET dispensing_status = ?, order_status = ?, completed_at = ' . ($complete ? 'CURRENT_TIMESTAMP' : 'NULL') . ' WHERE id = ?');
+    $update->execute([$complete ? 'dispensed' : 'partial', $complete ? 'completed' : 'processing', $order['id']]);
+}
+
+function medivendDemoEndpoint(string $kind): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    $database = null;
+    $view = null;
+    try {
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        if (($kind === 'status' && $method !== 'GET') || ($kind !== 'status' && $method !== 'POST')) {
+            header('Allow: ' . ($kind === 'status' ? 'GET' : 'POST'));
+            throw new MedivendCheckoutError(405, 'method_not_allowed', 'Unsupported simulation request method.');
+        }
+        $key = medivendDemoKey();
+        $body = null;
+        if ($kind === 'payment') {
+            $body = medivendDemoBody(['state_token', 'coin_centavos']);
+            if (!is_int($body->coin_centavos)) throw new MedivendCheckoutError(422, 'invalid_coin', 'Coin values must be integer centavos.');
+        } elseif ($kind === 'dispense') {
+            $body = medivendDemoBody(['state_token', 'action', 'product_id']);
+            if (!is_string($body->action) || !in_array($body->action, ['start', 'delivered', 'jam', 'no_confirmation'], true)
+                || ($body->action === 'delivered' ? !is_int($body->product_id) || $body->product_id < 1 : $body->product_id !== null)) {
+                throw new MedivendCheckoutError(422, 'invalid_event', 'Choose a valid dispensing simulation outcome.');
+            }
+        }
+        $database = medivendDatabase();
+        $database->beginTransaction();
+        $order = medivendDemoLock($database, $key);
+        $view = medivendDemoView($order, $key);
+        if ($body !== null) {
+            medivendDemoToken($order, $key, $body->state_token);
+            if ($kind === 'payment') medivendDemoCoin($database, $order, $body->coin_centavos);
+            else medivendDemoDispense($database, $order, $body->action, $body->product_id);
+            $order = medivendReadOrder($database, $order['reference']);
+        }
+        $database->commit();
+        echo json_encode(medivendDemoView($order, $key), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    } catch (Throwable $error) {
+        if ($database instanceof PDO && $database->inTransaction()) $database->rollBack();
+        $known = $error instanceof MedivendCheckoutError;
+        http_response_code($known ? $error->status : 503);
+        if (!$known) error_log('[MediVend demo] ' . $error->getMessage());
+        $response = ['error' => ['code' => $known ? $error->errorCode : 'simulation_unavailable',
+            'message' => $known ? $error->getMessage() : 'The simulation result could not be confirmed. Refresh status; do not resend delivery events.']];
+        if ($known && $view) $response += $view;
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+}
