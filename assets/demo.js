@@ -1,5 +1,6 @@
 /* Simulation only: balances change only after a PHP-confirmed ledger event. */
 const DemoFlow = (() => {
+  const denominations = [100, 500, 1000, 2000];
   const storageKey = 'medivend.current-demo-order.v1';
   const creditStorageKey = 'medivend.protected-demo-credit.v1';
   let key = null, busy = false, blocked = false, uncertainDelivery = false, error = '', progress = '';
@@ -32,7 +33,7 @@ const DemoFlow = (() => {
       if (!value || !/^[a-f0-9]{64}$/.test(value.key)) return false;
       key = value.key; uncertainDelivery = value.uncertainDelivery === true;
       if (value.pendingCoin && /^[a-f0-9]{64}$/.test(value.pendingCoin.event_id)
-        && [100, 500, 1000].includes(value.pendingCoin.coin_centavos)) pendingCoin = value.pendingCoin;
+        && denominations.includes(value.pendingCoin.coin_centavos)) pendingCoin = value.pendingCoin;
       blocked = true; screen = 'pending'; return true;
     } catch { return false; }
   }
@@ -119,7 +120,7 @@ const DemoFlow = (() => {
     const wasUncertain = uncertainDelivery;
     if (kind === 'dispense') uncertainDelivery = true;
     if (kind === 'payment' && !pendingCoin) {
-      if (![100, 500, 1000].includes(fields.coin_centavos)) return;
+      if (!denominations.includes(fields.coin_centavos)) return;
       const eventId = [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
       pendingCoin = { event_id: eventId, coin_centavos: fields.coin_centavos };
     }
@@ -160,19 +161,20 @@ const DemoFlow = (() => {
     const order = lastOrder;
     const review = order.orderStatus === 'needs_review', completed = order.orderStatus === 'completed', cancelled = order.orderStatus === 'cancelled';
     const paid = order.paymentStatus === 'paid', running = order.orderStatus === 'processing';
-    const remaining = order.total - order.paid;
+    const remaining = Math.max(0, order.total - order.paid);
+    const excess = Math.max(0, order.paid - order.total);
     const delivered = order.items.reduce((sum, item) => sum + item.delivered, 0);
     const count = order.items.reduce((sum, item) => sum + item.qty, 0);
     const disabled = busy || blocked || !!pendingCoin || !order.isDemo;
     const heading = review ? 'Please contact clinic staff' : completed ? 'Demo delivery complete.' : cancelled ? 'Unpaid session closed.' : running ? 'Dispensing…' : paid ? 'Demo payment complete.' : 'Demo payment';
-    const usable = [100, 500, 1000].filter(coin => coin <= remaining);
+    const usable = denominations.filter(coin => coin <= remaining);
     const guidance = usable.length ? 'For ' + money(remaining) + ' remaining, use simulated ' + usable.map(coin => money(coin).replace('.00', '')).join(' or ') + ' coins.'
       : 'No supported demo coin fits. Please contact clinic staff.';
-    const coinButtons = [100, 500, 1000].map(coin => '<button class="secondary demo-coin" data-action="demo-coin" data-coin="' + coin + '" ' + (disabled || coin > remaining ? 'disabled' : '') + ' title="' + escapeHtml(coin > remaining ? guidance : 'Simulated coin event only') + '">Demo insert ' + money(coin).replace('.00', '') + '</button>').join('');
-    const coinPanel = '<p class="demo-help"><strong>Exact payment only. No change.</strong></p><p class="demo-denominations">Accepted demo denominations: ₱1 · ₱5 · ₱10</p><div class="demo-coins">' + coinButtons + '</div><p class="notice demo-guidance">' + escapeHtml(guidance) + '</p>';
+    const coinButtons = denominations.map(coin => '<button class="secondary demo-coin" data-action="demo-coin" data-coin="' + coin + '" ' + (disabled || coin > remaining ? 'disabled' : '') + ' title="' + escapeHtml(coin > remaining ? guidance : 'Simulated coin event only') + '">Demo insert ' + money(coin).replace('.00', '') + '</button>').join('');
+    const coinPanel = '<p class="demo-help"><strong>Exact payment only. This machine cannot return change.</strong></p><p class="demo-denominations">Accepted demo denominations: ₱1 · ₱5 · ₱10 · ₱20</p><div class="demo-coins">' + coinButtons + '</div><p class="notice demo-guidance">' + escapeHtml(guidance) + '</p>';
     let controls = '';
     if (pendingCoin) controls = coinPanel + '<p class="demo-help">An unconfirmed ' + money(pendingCoin.coin_centavos) + ' demo event is kept for recovery. New coin controls are paused.</p>' + (busy ? '' : '<button class="primary" data-action="demo-retry-coin">Retry same demo coin event ' + icon('arrow') + '</button>');
-    else if (review) controls = '<div class="staff-message" role="alert"><strong>Please contact clinic staff.</strong><p>The simulation has stopped. Recorded credit and confirmed deliveries are preserved. No automatic retry or refund has occurred.</p></div>';
+    else if (review) controls = '<div class="staff-message" role="alert"><strong>Please contact clinic staff.</strong><p>' + (excess ? 'Full inserted amount ' + money(order.paid) + ' is preserved, including ' + money(excess) + ' above the order total. Automatic dispensing is stopped. No change or refund has been returned.' : 'The simulation has stopped. Recorded credit and confirmed deliveries are preserved. No automatic retry or refund has occurred.') + '</p></div>';
     else if (completed) controls = '<div class="demo-complete">' + icon('check') + '<strong>Every ordered unit is confirmed.</strong><p>Simulation only. No physical hardware was activated.</p></div>';
     else if (cancelled) controls = '<div class="demo-complete"><strong>This unpaid session is closed.</strong><p>No credit was accepted or refunded. Start a new session to choose medicines.</p></div>';
     else if (!paid) controls = coinPanel;

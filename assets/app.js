@@ -157,7 +157,8 @@ function savedOrderFromResponse(payload, expectedItems) {
   const order = payload?.order;
   if (!order || typeof order.reference !== 'string' || !/^MV-[A-F0-9]{32}$/.test(order.reference)
     || !Number.isSafeInteger(order.total_centavos) || order.total_centavos < 0 || order.total_centavos > 4294967295
-    || !Number.isSafeInteger(order.amount_paid_centavos) || order.amount_paid_centavos < 0 || order.amount_paid_centavos > order.total_centavos
+    || !Number.isSafeInteger(order.amount_paid_centavos) || order.amount_paid_centavos < 0 || order.amount_paid_centavos > 4294967295
+    || (order.amount_paid_centavos > order.total_centavos && (order.order_status !== 'needs_review' || order.dispensing_status !== 'needs_review'))
     || !['pending', 'partial', 'paid', 'cancelled'].includes(order.payment_status)
     || !['not_started', 'in_progress', 'partial', 'dispensed', 'needs_review'].includes(order.dispensing_status)
     || !['pending', 'processing', 'completed', 'needs_review', 'cancelled'].includes(order.order_status) || order.is_demo !== true

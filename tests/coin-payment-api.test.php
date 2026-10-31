@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../includes/demo-order.php';
+require_once __DIR__ . '/../includes/accepted-coin.php';
 
 function coinAssert(bool $condition, string $message): void
 {
@@ -54,6 +55,28 @@ function raceCloseAndCoin(string $key): array
     curl_multi_close($multi); return $results;
 }
 
+function acceptedCoinParallel(string $reference, array $events): array
+{
+    $script = 'require ' . var_export(__DIR__ . '/../includes/database.php', true) . '; require '
+        . var_export(__DIR__ . '/../includes/accepted-coin.php', true) . '; '
+        . 'echo json_encode(medivendRecordAcceptedCoin(medivendDatabase(), $argv[1], $argv[2], (int) $argv[3]), JSON_THROW_ON_ERROR);';
+    $children = [];
+    foreach ($events as $event) {
+        $process = proc_open([PHP_BINARY, '-r', $script, $reference, $event['event_id'], (string) $event['coin_centavos']],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        coinAssert(is_resource($process), 'Could not start accepted-coin simulation.');
+        fclose($pipes[0]); $children[] = [$process, $pipes];
+    }
+    $results = [];
+    foreach ($children as [$process, $pipes]) {
+        $output = stream_get_contents($pipes[1]); $errors = stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]);
+        coinAssert(proc_close($process) === 0, 'Accepted-coin simulation failed: ' . $errors);
+        $results[] = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
+    }
+    return $results;
+}
+
 $database = medivendDatabase();
 $originalProducts = $database->query('SELECT * FROM products ORDER BY id')->fetchAll();
 $originalOrders = $database->query('SELECT * FROM transactions ORDER BY id')->fetchAll();
@@ -103,7 +126,7 @@ try {
     $overId = bin2hex(random_bytes(32));
     $over = coinSend($overKey, 500, $overId);
     coinAssert($over['status'] === 409 && $over['body']['order']['amount_paid_centavos'] === 600, 'Overpayment never increases the balance.');
-    coinAssert(strpos($over['body']['error']['message'], 'simulated ₱1') !== false && strpos($over['body']['error']['message'], 'Exact payment only. No change.') !== false, 'Overpayment explains smaller supported denominations.');
+    coinAssert(strpos($over['body']['error']['message'], 'simulated ₱1') !== false && strpos($over['body']['error']['message'], MEDIVEND_EXACT_PAYMENT_MESSAGE) !== false, 'Overpayment explains smaller supported denominations.');
     coinAssert($over['body']['usable_denominations_centavos'] === [100], 'Current usable coins are returned.');
     $lookup = coinResponse(coinRequestHandle('demo-order', $overKey, null, $overId));
     coinAssert($lookup['body']['coin_event']['outcome'] === 'rejected', 'A refresh can recover a rejected coin outcome.');
@@ -137,7 +160,59 @@ try {
     $legacyPaid = coinSend($legacyKey, 100);
     coinAssert($legacyPaid['body']['order']['amount_paid_centavos'] === 500, 'Existing pre-ledger credit is preserved.');
 
-    foreach ([['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => '100'], ['event_id' => 'bad', 'coin_centavos' => 100], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => -100], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 200], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 100, 'total_centavos' => 1]] as $invalid) {
+    [$twentyKey, $twentyOrder] = $make(2);
+    $twentyEvent = ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 2000];
+    $twenties = coinParallel($twentyKey, array_fill(0, 6, $twentyEvent));
+    coinAssert(array_column($twenties, 'status') === array_fill(0, 6, 200), 'Concurrent ₱20 duplicates replay successfully.');
+    $twenty = coinResponse(coinRequestHandle('demo-order', $twentyKey, null, $twentyEvent['event_id']));
+    coinAssert($twenty['body']['order']['amount_paid_centavos'] === 2000 && $twenty['body']['order']['payment_status'] === 'paid'
+        && count($eventsFor($twentyOrder['reference'])) === 1, 'One ₱20 event exactly pays a ₱20 order once and recovers on refresh.');
+    coinAssert($twenty['body']['accepted_denominations_centavos'] === [100, 500, 1000, 2000]
+        && $twenty['body']['exact_payment_message'] === MEDIVEND_EXACT_PAYMENT_MESSAGE, 'All denominations and exact-payment warning are returned.');
+    [$mixedKey] = $make(4);
+    foreach ([2000, 1000, 500, 100, 100, 100, 100, 100] as $coin) $mixed = coinSend($mixedKey, $coin);
+    coinAssert($mixed['body']['order']['amount_paid_centavos'] === 4000 && $mixed['body']['order']['payment_status'] === 'paid', 'All four denominations can combine to exactly pay ₱40.');
+    [$tenKey, $tenOrder] = $make();
+    $tooLarge = coinSend($tenKey, 2000);
+    coinAssert($tooLarge['status'] === 409 && $tooLarge['body']['order']['amount_paid_centavos'] === 0
+        && $tooLarge['body']['usable_denominations_centavos'] === [100, 500, 1000], 'Demo ₱20 on ₱10 is recorded as rejected without credit.');
+    [$partialKey] = $make(2);
+    coinSend($partialKey, 500); $partialId = bin2hex(random_bytes(32));
+    $partialOver = coinSend($partialKey, 2000, $partialId);
+    coinAssert($partialOver['status'] === 409 && $partialOver['body']['order']['amount_paid_centavos'] === 500
+        && $partialOver['body']['order']['payment_status'] === 'partial', 'Demo ₱20 cannot exceed the ₱15 balance after partial payment.');
+    coinAssert(coinSend($partialKey, 2000, $partialId)['body']['coin_event']['replayed'] === true, 'Rejected ₱20 retries stay rejected.');
+
+    // Simulate trusted acceptor observations by calling the internal recorder.
+    // No real acceptor, serial port, motor or public hardware route is used.
+    $acceptedId = bin2hex(random_bytes(32));
+    $accepted = medivendRecordAcceptedCoin($database, $tenOrder['reference'], $acceptedId, 2000);
+    coinAssert($accepted['order']['amount_paid_centavos'] === 2000 && $accepted['order']['order_status'] === 'needs_review'
+        && $accepted['order']['dispensing_status'] === 'needs_review', 'An already accepted excess coin records its full ₱20 and blocks dispensing.');
+    coinAssert($accepted['coin_event']['event_source'] === 'accepted_coin' && $accepted['coin_event']['outcome'] === 'accepted', 'Observed accepted money is never logged as a rejected demo coin.');
+    coinAssert(medivendRecordAcceptedCoin($database, $tenOrder['reference'], $acceptedId, 2000)['coin_event']['replayed'] === true, 'An accepted-coin retry credits only once.');
+    $acceptedView = coinResponse(coinRequestHandle('demo-order', $tenKey));
+    coinAssert($acceptedView['body']['excess_centavos'] === 1000 && $acceptedView['body']['order']['amount_paid_centavos'] === 2000, 'Refresh returns full credit and excess, without capping at the total.');
+    coinAssert(coinResponse(coinRequestHandle('demo-dispense', $tenKey,
+        ['state_token' => $acceptedView['body']['state_token'], 'action' => 'start', 'product_id' => null]))['status'] === 409, 'An overpaid order cannot automatically dispense.');
+    coinAssert(coinResponse(coinRequestHandle('demo-session', $tenKey, []))['status'] === 409, 'Excess credit cannot be reset.');
+    coinAssert(coinSend($tenKey, 2000, $acceptedId)['status'] === 409, 'The demo path cannot replay or forge an accepted-coin source.');
+    [$acceptedPartialKey, $acceptedPartialOrder] = $make(2);
+    coinSend($acceptedPartialKey, 500);
+    $acceptedPartial = medivendRecordAcceptedCoin($database, $acceptedPartialOrder['reference'], bin2hex(random_bytes(32)), 2000);
+    coinAssert($acceptedPartial['order']['amount_paid_centavos'] === 2500 && $acceptedPartial['order']['order_status'] === 'needs_review', 'Already accepted overpayment after partial credit preserves all ₱25.');
+    [$acceptedRaceKey, $acceptedRaceOrder] = $make(2);
+    $acceptedEvent = ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 2000];
+    $acceptedCopies = acceptedCoinParallel($acceptedRaceOrder['reference'], array_fill(0, 6, $acceptedEvent));
+    coinAssert(count(array_filter($acceptedCopies, static fn(array $result): bool => !$result['coin_event']['replayed'])) === 1
+        && count($eventsFor($acceptedRaceOrder['reference'])) === 1, 'Concurrent accepted-coin copies have one credit and ledger row.');
+    $observed = [];
+    for ($i = 0; $i < 3; $i++) $observed[] = ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 2000];
+    acceptedCoinParallel($acceptedRaceOrder['reference'], $observed);
+    $observedState = coinResponse(coinRequestHandle('demo-order', $acceptedRaceKey))['body']['order'];
+    coinAssert($observedState['amount_paid_centavos'] === 8000 && $observedState['order_status'] === 'needs_review', 'Distinct already accepted coins after paid are all preserved and require staff.');
+
+    foreach ([['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => '100'], ['event_id' => 'bad', 'coin_centavos' => 100], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => -100], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 200], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 100, 'total_centavos' => 1], ['event_id' => bin2hex(random_bytes(32)), 'coin_centavos' => 2000, 'event_source' => 'accepted_coin']] as $invalid) {
         coinAssert(coinResponse(coinRequestHandle('demo-payment', $overKey, $invalid))['status'] === 422, 'Invalid values/fields are rejected.');
     }
     foreach ($owned as $reference) {
@@ -162,13 +237,21 @@ try {
         coinAssert(($status['order_status'] === 'cancelled' && $status['amount_paid_centavos'] === 0)
             || ($status['order_status'] === 'pending' && $status['amount_paid_centavos'] === 100), 'A concurrent coin is either preserved or not accepted.');
     }
-    [$processingKey, $processingOrder] = $make();
-    $processingPayment = coinSend($processingKey, 1000);
+    [$processingKey, $processingOrder] = $make(2);
+    $processingPayment = coinSend($processingKey, 2000);
     $start = coinResponse(coinRequestHandle('demo-dispense', $processingKey,
         ['state_token' => $processingPayment['body']['state_token'], 'action' => 'start', 'product_id' => null]));
     coinAssert($start['body']['order']['order_status'] === 'processing', 'Fixture enters unresolved dispensing.');
     coinAssert(coinResponse(coinRequestHandle('demo-session', $processingKey, []))['status'] === 409, 'Reset cannot interrupt unresolved dispensing.');
-    echo 'PASS: mixed coins, multiple items, durable replay, concurrent events, refresh, no change, payment completion, legacy credit, and atomic session/credit protection.' . PHP_EOL;
+    $one = coinResponse(coinRequestHandle('demo-dispense', $processingKey,
+        ['state_token' => $start['body']['state_token'], 'action' => 'delivered', 'product_id' => $ids[0]]));
+    $processingExcess = medivendRecordAcceptedCoin($database, $processingOrder['reference'], bin2hex(random_bytes(32)), 100);
+    coinAssert($processingExcess['order']['amount_paid_centavos'] === 2100 && $processingExcess['order']['order_status'] === 'needs_review'
+        && $processingExcess['order']['items'][0]['dispensed_quantity'] === 1, 'Accepted excess during dispensing stops and preserves partial delivery.');
+    $stopped = coinResponse(coinRequestHandle('demo-order', $processingKey));
+    coinAssert(coinResponse(coinRequestHandle('demo-dispense', $processingKey,
+        ['state_token' => $stopped['body']['state_token'], 'action' => 'delivered', 'product_id' => $ids[0]]))['status'] === 409, 'Accepted excess prevents the next delivery.');
+    echo 'PASS: ₱1/₱5/₱10/₱20, mixed/exact payments, demo overpayment rejection, accepted excess-credit review, durable replay, concurrent events, refresh, and session protection.' . PHP_EOL;
 } catch (Throwable $error) { $failed = true; fwrite(STDERR, 'FAIL: ' . $error->getMessage() . PHP_EOL); }
 finally {
     if ($database->inTransaction()) $database->rollBack(); $database->beginTransaction();

@@ -24,9 +24,10 @@ function medivendDemoView(array $order, string $key): array
     $accepting = $order['is_demo'] && $order['order_status'] === 'pending'
         && $order['dispensing_status'] === 'not_started' && in_array($order['payment_status'], ['pending', 'partial'], true);
     return ['order' => $order, 'state_token' => hash_hmac('sha256', json_encode($order, JSON_THROW_ON_ERROR), $key),
-        'accepted_denominations_centavos' => [100, 500, 1000],
-        'usable_denominations_centavos' => $accepting ? array_values(array_filter([100, 500, 1000], static fn(int $coin): bool => $coin <= $remaining)) : [],
-        'exact_payment_message' => 'Exact payment only. No change.'];
+        'accepted_denominations_centavos' => MEDIVEND_COIN_DENOMINATIONS,
+        'usable_denominations_centavos' => $accepting ? array_values(array_filter(MEDIVEND_COIN_DENOMINATIONS, static fn(int $coin): bool => $coin <= $remaining)) : [],
+        'excess_centavos' => max(0, $order['amount_paid_centavos'] - $order['total_centavos']),
+        'exact_payment_message' => MEDIVEND_EXACT_PAYMENT_MESSAGE];
 }
 
 function medivendDemoLock(PDO $database, string $key): array

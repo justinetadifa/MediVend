@@ -174,13 +174,13 @@ try {
   await tap(page, '#staff-close');
   await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.demo-flow'); await idle(page);
   assert.equal((await stateOf(page)).paid, 1000);
-  await pay(page, [500, 100, 100, 100, 100, 100, 1000, 1000]);
+  await pay(page, [500, 100, 100, 100, 100, 100, 2000]);
   state = await stateOf(page); assert.equal(state.paid, 4000); await screen(page, 'payment-complete');
   const firstCoin = mutations.find(request => request.path === 'demo-payment.php');
   const duplicateCoin = await http('demo-payment', orderKey, firstCoin.body);
   assert.equal(duplicateCoin.status, 200); assert.equal(duplicateCoin.body.coin_event.replayed, true); assert.equal(duplicateCoin.body.order.amount_paid_centavos, 4000);
   const extraCoin = await http('demo-payment', orderKey, { event_id: randomBytes(32).toString('hex'), coin_centavos: 100 }); assert.equal(extraCoin.status, 409);
-  pass('Mixed ₱1/₱5/₱10 coins, persistent duplicates, paid-state rejection, refresh recovery and credit protection');
+  pass('Mixed ₱1/₱5/₱10/₱20 coins, persistent duplicates, paid-state rejection, refresh recovery and credit protection');
   await start(page); await screen(page, 'dispensing');
   const beforeStock = [stock(a), stock(b), stock(c)];
   main.control.mutation = 'hold'; await tap(page, '[data-action="demo-delivered"][data-id="' + a + '"]');
@@ -203,6 +203,40 @@ try {
   assert.notEqual((await stateOf(page)).reference, state.reference); assert.equal((await stateOf(page)).paid, 0); assert.equal((await stateOf(page)).total, 1000);
   await tap(page, '#home'); await page.waitForSelector('.welcome');
   pass('Per-unit stock decrements once, unresolved dispensing blocks reset, and Finish session clears all customer state');
+
+  const twenty = await customer(); await select(twenty.page, [[a, 2]]); await review(twenty.page); await save(twenty.page);
+  assert.equal(await twenty.page.$eval('[data-coin="2000"]', button => button.disabled), false);
+  assert.equal(await twenty.page.$eval('.demo-help strong', element => element.textContent), 'Exact payment only. This machine cannot return change.');
+  assert.match(await twenty.page.$eval('.demo-denominations', element => element.textContent), /₱1 · ₱5 · ₱10 · ₱20/);
+  await screen(twenty.page, 'twenty-peso-payment');
+  const twentyState = await stateOf(twenty.page);
+  twenty.control.mutation = 'drop'; await tap(twenty.page, '[data-coin="2000"]'); await twenty.page.waitForSelector('.checkout-error');
+  assert.equal(await twenty.page.evaluate(() => JSON.parse(sessionStorage.getItem('medivend.current-demo-order.v1')).pendingCoin.coin_centavos), 2000);
+  await twenty.page.reload({ waitUntil: 'load' }); await twenty.page.waitForSelector('.demo-flow'); await idle(twenty.page);
+  assert.equal((await stateOf(twenty.page)).reference, twentyState.reference); assert.equal((await stateOf(twenty.page)).paid, 2000);
+  assert.equal((await stateOf(twenty.page)).total, 2000);
+  const tooLarge = await customer(); await select(tooLarge.page); await review(tooLarge.page); await save(tooLarge.page);
+  assert.equal(await tooLarge.page.$eval('[data-coin="2000"]', button => button.disabled), true);
+  // Bypass the disabled DOM to verify PHP remains authoritative.
+  await tooLarge.page.evaluate(() => DemoFlow.action({ dataset: { action: 'demo-coin', coin: '2000' } })); await idle(tooLarge.page);
+  assert.equal((await stateOf(tooLarge.page)).paid, 0); assert.match(await tooLarge.page.$eval('.checkout-error', element => element.textContent), /exceeds the remaining balance/);
+  await screen(tooLarge.page, 'twenty-on-ten-rejected');
+  const partialTwenty = await customer(); await select(partialTwenty.page, [[a, 2]]); await review(partialTwenty.page); await save(partialTwenty.page); await pay(partialTwenty.page, [500]);
+  assert.equal(await partialTwenty.page.$eval('[data-coin="2000"]', button => button.disabled), true);
+  await partialTwenty.page.evaluate(() => DemoFlow.action({ dataset: { action: 'demo-coin', coin: '2000' } })); await idle(partialTwenty.page);
+  assert.equal((await stateOf(partialTwenty.page)).paid, 500); await screen(partialTwenty.page, 'partial-overpayment-rejected');
+  const excessState = await stateOf(partialTwenty.page), excessStock = stock(a);
+  database({ operation: 'accepted_coin', tag: fixture.tag, reference: excessState.reference, event_id: randomBytes(32).toString('hex'), coin_centavos: 2000 });
+  await tap(partialTwenty.page, '[data-action="demo-refresh"]'); await idle(partialTwenty.page);
+  assert.equal((await stateOf(partialTwenty.page)).paid, 2500); assert.equal((await stateOf(partialTwenty.page)).status, 'needs_review');
+  assert.equal(stock(a), excessStock); assert.equal(await partialTwenty.page.$('[data-action="demo-start"]'), null);
+  assert.match(await partialTwenty.page.$eval('.staff-message', element => element.textContent), /₱25\.00.*₱5\.00.*No change or refund has been returned/);
+  assert.equal(await partialTwenty.page.$eval('.payment-amounts > div:last-child strong', element => element.textContent), '₱0.00');
+  await partialTwenty.page.reload({ waitUntil: 'load' }); await partialTwenty.page.waitForSelector('.staff-message'); await idle(partialTwenty.page);
+  assert.equal((await stateOf(partialTwenty.page)).paid, 2500); await screen(partialTwenty.page, 'accepted-excess-credit-review');
+  await tap(partialTwenty.page, '#home'); assert.equal(await partialTwenty.page.$eval('#staff-dialog', dialog => dialog.open), true);
+  assert.equal(await partialTwenty.page.$eval('#staff-amount', element => element.textContent), '₱25.00'); await tap(partialTwenty.page, '#staff-close');
+  pass('₱20 exact payment, disabled/rejected overpayments, and full accepted excess-credit recovery/staff review');
 
   const jam = await customer(); await select(jam.page, [[a, 2]]); await review(jam.page); await save(jam.page); await pay(jam.page, [1000, 1000]); await start(jam.page); await deliver(jam.page, a);
   await tap(jam.page, '[data-action="demo-jam"]'); await idle(jam.page); assert.equal((await stateOf(jam.page)).status, 'needs_review'); assert.equal((await stateOf(jam.page)).items[0].delivered, 1);

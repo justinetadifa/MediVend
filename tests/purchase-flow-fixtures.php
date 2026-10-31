@@ -6,6 +6,18 @@ require_once __DIR__ . '/../includes/database.php';
 $input = json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR);
 $database = medivendDatabase();
 $operation = $input['operation'] ?? 'snapshot';
+if ($operation === 'accepted_coin') {
+    // CLI-only test simulation. Never expose trusted accepted-money input to a
+    // browser. Refuse all references that do not belong to this fixture tag.
+    $tag = $input['tag'] ?? '';
+    if (!preg_match('/\ATEST-AUDIT-[a-f0-9]{12}\z/', $tag) || !is_int($input['coin_centavos'] ?? null)) throw new RuntimeException('Invalid accepted-coin fixture.');
+    $verify = $database->prepare('SELECT COUNT(*) AS units, SUM(p.sku NOT LIKE ?) AS foreign_units FROM transaction_items ti
+        JOIN transactions t ON t.id = ti.transaction_id JOIN products p ON p.id = ti.product_id WHERE t.reference = ? AND t.is_demo = 1');
+    $verify->execute([$tag . '-%', $input['reference'] ?? '']); $owned = $verify->fetch();
+    if ((int) $owned['units'] < 1 || (int) $owned['foreign_units'] !== 0) throw new RuntimeException('Accepted-coin simulation requires owned demo fixtures.');
+    require_once __DIR__ . '/../includes/accepted-coin.php';
+    echo json_encode(medivendRecordAcceptedCoin($database, $input['reference'], $input['event_id'], $input['coin_centavos']), JSON_THROW_ON_ERROR); exit;
+}
 if ($operation === 'create') {
     $used = array_fill_keys($database->query('SELECT compartment_number FROM products')->fetchAll(PDO::FETCH_COLUMN), true);
     $slots = [];

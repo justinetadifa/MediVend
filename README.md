@@ -11,7 +11,7 @@ Saving an order creates a `transactions` row and its `transaction_items` snapsho
 3. Use the existing `medivend_db` database. On a fresh machine, import your original `medivend_db.sql` in [phpMyAdmin](http://localhost/phpmyadmin/), then apply the additive migration and current-price update below.
 4. Check `config/database.php`: host `localhost`, port `3306`, database `medivend_db`, username `root`, and an empty password. XAMPP's `pdo_mysql` extension must be enabled.
 5. Open **[http://localhost/MediVend/](http://localhost/MediVend/)**. Tap **Get Started**, choose medicines, open **Review order**, acknowledge the demo, and tap **Save order**.
-6. The **Demo payment** screen shows the saved reference, total due, amount inserted, remaining balance, and accepted denominations. Test with **Demo insert ₱1 / ₱5 / ₱10**. It displays **Exact payment only. No change.**
+6. The **Demo payment** screen shows the saved reference, total due, amount inserted, remaining balance, and accepted denominations. Test with **Demo insert ₱1 / ₱5 / ₱10 / ₱20**. It displays **Exact payment only. This machine cannot return change.**
 7. After **Demo payment complete**, tap **Simulate dispensing**, then simulate each confirmed unit or a fault. These controls change demo database records only.
 
 Use Apache rather than opening `index.html` directly or using a static-only server. No Composer packages, npm installation, build step, or internet connection is required.
@@ -24,7 +24,7 @@ Apply the migration from PowerShell in the project folder before using coin cont
 & 'C:\xampp\php\php.exe' scripts/migrate.php
 ```
 
-The CLI-only runner uses the configured database and can be run again. It applies `database/migrations/001_demo_coin_events.sql` (adds the event ledger) and `database/updates/002_prices_10_pesos.sql` (updates only the three current medicine SKUs). Both SQL files can also be run in phpMyAdmin with `medivend_db` selected. Neither file deletes data or rewrites historical order totals, credits, or item price snapshots. Existing pre-ledger credit is preserved; no fabricated historical events are inserted.
+The CLI-only runner uses the configured database and can be run again. It applies `database/migrations/001_demo_coin_events.sql` (adds the event ledger), `database/updates/002_prices_10_pesos.sql` (updates only the three current medicine SKUs), and `database/migrations/003_twenty_peso_coins.sql` (allows 2000-centavo events and adds their source). These SQL files can also be run in that order in phpMyAdmin with `medivend_db` selected; migration 003 targets local XAMPP MariaDB. They do not delete data or rewrite historical order totals, credits, or item price snapshots. Existing ledger rows receive source `demo`; pre-ledger credit is preserved without fabricated historical events.
 
 ## Catalog
 
@@ -75,7 +75,7 @@ Before leaving a saved **unpaid** order, the browser posts `{}` to `api/demo-ses
 
 The tab keeps its current-order capability in `sessionStorage`. `X-Demo-Order-Key` binds simulation requests to that exact saved order; a public reference alone is insufficient. Every simulation endpoint rejects non-demo orders. Stock consumption additionally requires demo, active products. Reloading the same tab retrieves its saved state through `GET api/demo-order.php`.
 
-`POST api/demo-payment.php` accepts only a unique `event_id` (64 lowercase hexadecimal characters) and integer `coin_centavos` (100, 500, or 1000), with the current `X-Demo-Order-Key` capability header. Any combination is accepted while it fits the remaining balance; payment stays `partial` until the saved total is reached, then becomes `paid`. New events after full payment are rejected. Payment alone never changes stock or dispensing.
+`POST api/demo-payment.php` accepts only a unique `event_id` (64 lowercase hexadecimal characters) and integer `coin_centavos` (100, 500, 1000, or 2000), with the current `X-Demo-Order-Key` capability header. Any combination is accepted while it fits the remaining balance; payment stays `partial` until the saved total is reached, then becomes `paid`. New events after full payment are rejected. Payment alone never changes stock or dispensing.
 
 ```json
 {"event_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","coin_centavos":500}
@@ -85,7 +85,9 @@ PHP locks the order row, checks the event ledger and database balance, and saves
 
 The ledger records accepted coins and valid-but-rejected attempts, including overpayment and payment-closed outcomes, along with before/after amounts and a reason. Accepted events return 200; rejected events return 409 with their saved result. Structurally invalid IDs, types, or denominations return 422 without credit. A retry of a rejected event remains rejected. Old credits from before migration remain part of the saved balance.
 
-Overpayment errors explain the smaller supported **simulated** denominations that fit. Both UI and API display **Exact payment only. No change.** This is a simulator rule, not a claim that a physical acceptor can reject or return a real coin; those hardware capabilities have not been verified. The UI never credits a frontend animation.
+Overpayment errors explain the smaller supported **simulated** denominations that fit. Both UI and API display **Exact payment only. This machine cannot return change.** Demo buttons above the remaining balance disable; PHP rejects those events independently. This is a simulator rule, not a claim that a physical acceptor can reject or return a real coin; those hardware capabilities have not been verified. The UI never credits a frontend animation.
+
+`includes/accepted-coin.php` provides a separate **server-only recorder** for money already accepted. It has no public HTTP route or enabled hardware connection. Tests simulate these observations. It stores the full accepted denomination and source `accepted_coin` atomically with the credit, even if that exceeds the order total or arrives after payment closed. Excess or out-of-stage money flags both order and dispensing `needs_review`, preserves partial delivery, and blocks further automatic dispensing. The screen restores the full inserted amount after refresh, shows the excess for staff, and never claims change/refund was returned. Browser JSON cannot select this source or bypass demo rejection. See [the coin-payment contract and test cases](docs/coin-payments.md) before any future hardware work.
 
 `POST api/demo-dispense.php` accepts only `state_token`, `action`, and `product_id`. Actions are `start`, `delivered`, `jam`, or `no_confirmation`; `product_id` is an integer only for `delivered`, otherwise null.
 
@@ -158,7 +160,9 @@ FROM demo_coin_events ORDER BY id DESC;
 - `api/checkout.php`: POST-only pending demo-order endpoint.
 - `includes/demo-order.php`: locked demo state transitions, event-token guards, and confirmed-unit stock updates.
 - `includes/coin-events.php`: persistent exactly-once coin results, integer balance updates, and no-change guidance.
+- `includes/accepted-coin.php`: trusted-server accepted-money recorder; tested through simulation, with no enabled hardware input.
 - `database/migrations/001_demo_coin_events.sql`: additive ledger migration.
+- `database/migrations/003_twenty_peso_coins.sql`: re-runnable ₱20 constraint/source migration for XAMPP MariaDB.
 - `database/updates/002_prices_10_pesos.sql`: non-destructive current-price update; historical orders are not repriced.
 - `scripts/migrate.php`: re-runnable CLI migration runner.
 - `api/demo-order.php`, `api/demo-payment.php`, `api/demo-dispense.php`, `api/demo-session.php`: current demo-order status, simulation, and atomic unpaid-session close endpoints.

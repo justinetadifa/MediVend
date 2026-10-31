@@ -1,5 +1,7 @@
 # MediVend purchase-flow audit
 
+This records the audit before the ₱20 extension. For current denominations, accepted-money handling and added tests, see [the coin-payment contract](coin-payments.md).
+
 Audited locally on **31 October 2026**, through XAMPP Apache/PHP 8.0.30 and the live `medivend_db` MariaDB database. The existing interface, branding, medicine images, typography and welcome animation were preserved. All payment and delivery operations used demo endpoints; no hardware integration was added or activated.
 
 ## Inspection and fixes

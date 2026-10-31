@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
 
+const MEDIVEND_COIN_DENOMINATIONS = [100, 500, 1000, 2000];
+const MEDIVEND_EXACT_PAYMENT_MESSAGE = 'Exact payment only. This machine cannot return change.';
+
 function medivendReadCoinEvent(PDO $database, string $eventId): ?array
 {
-    $statement = $database->prepare('SELECT event_id, transaction_id, coin_centavos, outcome, reason_code, message,
+    $statement = $database->prepare('SELECT event_id, transaction_id, coin_centavos, event_source, outcome, reason_code, message,
         amount_before_centavos, amount_after_centavos, payment_status_after FROM demo_coin_events WHERE event_id = ?');
     $statement->execute([$eventId]);
     $row = $statement->fetch();
@@ -11,6 +14,7 @@ function medivendReadCoinEvent(PDO $database, string $eventId): ?array
     return [
         'event_id' => $row['event_id'], 'transaction_id' => (string) $row['transaction_id'],
         'coin_centavos' => (int) $row['coin_centavos'], 'outcome' => $row['outcome'],
+        'event_source' => $row['event_source'],
         'reason_code' => $row['reason_code'], 'message' => $row['message'],
         'amount_before_centavos' => (int) $row['amount_before_centavos'],
         'amount_after_centavos' => (int) $row['amount_after_centavos'],
@@ -21,9 +25,9 @@ function medivendReadCoinEvent(PDO $database, string $eventId): ?array
 function medivendSmallerCoinMessage(int $remaining): string
 {
     $coins = [];
-    foreach ([100, 500, 1000] as $coin) if ($coin <= $remaining) $coins[] = '₱' . intdiv($coin, 100);
-    return $coins ? 'Use simulated ' . implode(' or ', $coins) . ' coins. Exact payment only. No change.'
-        : 'No supported demo coin fits the balance. Please contact clinic staff. Exact payment only. No change.';
+    foreach (MEDIVEND_COIN_DENOMINATIONS as $coin) if ($coin <= $remaining) $coins[] = '₱' . intdiv($coin, 100);
+    return ($coins ? 'Use simulated ' . implode(' or ', $coins) . ' coins. '
+        : 'No supported demo coin fits the balance. Please contact clinic staff. ') . MEDIVEND_EXACT_PAYMENT_MESSAGE;
 }
 
 function medivendProcessCoinEvent(PDO $database, array $order, string $eventId, int $coin): array
@@ -33,13 +37,13 @@ function medivendProcessCoinEvent(PDO $database, array $order, string $eventId, 
     // reuse. Ledger insertion and balance update commit or roll back together.
     $existing = medivendReadCoinEvent($database, $eventId);
     if ($existing) {
-        if ($existing['transaction_id'] !== $order['id'] || $existing['coin_centavos'] !== $coin) {
+        if ($existing['transaction_id'] !== $order['id'] || $existing['coin_centavos'] !== $coin || $existing['event_source'] !== 'demo') {
             throw new MedivendCheckoutError(409, 'coin_event_conflict', 'This demo coin event ID was already used for a different event. Please contact clinic staff.');
         }
         return $existing + ['replayed' => true];
     }
-    if (!in_array($coin, [100, 500, 1000], true)) {
-        throw new MedivendCheckoutError(422, 'invalid_coin', 'Only integer-centavo demo ₱1, ₱5, and ₱10 events are supported.');
+    if (!in_array($coin, MEDIVEND_COIN_DENOMINATIONS, true)) {
+        throw new MedivendCheckoutError(422, 'invalid_coin', 'Only integer-centavo demo ₱1, ₱5, ₱10, and ₱20 events are supported.');
     }
     $before = $order['amount_paid_centavos'];
     $after = $before;

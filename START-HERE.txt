@@ -12,7 +12,7 @@ RUN IN XAMPP
 5. Open http://localhost/MediVend/ rather than opening index.html directly.
 6. Get Started > choose items > Review order > acknowledge demo > Save order.
 7. Demo payment shows the reference, total, amount inserted, balance, and coins.
-8. Use Demo insert PHP 1 / PHP 5 / PHP 10. No real coins are accepted.
+8. Use Demo insert PHP 1 / PHP 5 / PHP 10 / PHP 20. No real coins are accepted.
 9. After Demo payment complete, choose Simulate dispensing.
 10. Simulate each confirmed unit, a jam, or no sensor confirmation.
 11. After every unit is confirmed, tap Finish session before the next customer.
@@ -47,12 +47,21 @@ dispensing_status=not_started, order_status=pending, completed_at=NULL, and
 item dispensed_quantity=0. Saving does not reserve or reduce stock.
 Demo coins update amount_paid_centavos in integer centavos. Payment becomes
 partial or paid; overpayment is rejected because this demo has no change.
-Display: Exact payment only. No change. Only simulated events are rejected;
+Display: Exact payment only. This machine cannot return change.
+Only simulated events are rejected;
 physical coin rejection/return capabilities have not been verified.
 The new demo_coin_events ledger stores unique event IDs and accepted/rejected
 results. Ledger insertion and credit updates use one database transaction.
 Duplicate retries replay the stored result, without adding another credit.
 Different simultaneous events are checked against the saved remaining balance.
+Migration 003 adds PHP 20 support and labels existing ledger events as demo.
+Demo buttons larger than the remaining balance disable; PHP also rejects them.
+This does not inhibit physical coins. includes/accepted-coin.php is a server-only
+recorder with no public route or hardware connection. Simulated tests verify that
+money already accepted is recorded in full, including excess. Excess/out-of-stage
+credit flags needs_review and stops automatic dispensing, preserves credit and
+partial deliveries, and requires staff. No change or refund is claimed.
+Keep hardware disconnected until rejection/inhibit capabilities are verified.
 Only fully paid demo orders may start the dispensing simulation. Stock is
 rechecked before starting and before each confirmed unit.
 Each confirmed simulated unit atomically decreases demo product stock and
@@ -92,6 +101,9 @@ The simulation/coin tests use their own temporary data and check mixed coins,
 multiple items, durable duplicate replay, concurrent events, refresh lookup,
 overpayment, payment completion, stock updates, jams, and missing confirmation.
 They also check concurrent payment versus unpaid-session closing.
+PHP 20 tests cover exact PHP 20 orders, all four denominations mixed, rejection
+on PHP 10 orders, overpayment after partial credit, persistent replay/reload,
+and simulated already-accepted excess credit with staff review.
 
 An optional full touch-browser audit is tests/purchase-flow-browser.test.mjs.
 It requires Node.js, an available Puppeteer module and Chrome. See README.md for
@@ -117,3 +129,4 @@ Use 1024 x 600 landscape, 100% display scaling/browser zoom, and F11 full screen
 for the intended touchscreen layout. Apache and MySQL must keep running.
 
 See README.md for the JSON contract, retry behavior, and detailed tests.
+See docs/coin-payments.md for the demo versus already-accepted-money contract.

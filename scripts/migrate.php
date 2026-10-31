@@ -6,7 +6,8 @@ require_once __DIR__ . '/../includes/database.php';
 
 try {
     $database = medivendDatabase();
-    foreach (['database/migrations/001_demo_coin_events.sql', 'database/updates/002_prices_10_pesos.sql'] as $file) {
+    foreach (['database/migrations/001_demo_coin_events.sql', 'database/updates/002_prices_10_pesos.sql',
+        'database/migrations/003_twenty_peso_coins.sql'] as $file) {
         $sql = file_get_contents(__DIR__ . '/../' . $file);
         if ($sql === false) throw new RuntimeException('Unable to read migration: ' . $file);
         $database->exec($sql);
